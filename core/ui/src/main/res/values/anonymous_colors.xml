@@ -1,0 +1,285 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- material3_colors_light.xml -->
+  <color name="anonymous_primary_inverse_light">#00D56A</color>
+  <color name="stock_primary_inverse_light">#00FD7E</color>
+  <color name="anonymous_primary_light">#006030</color>
+  <color name="stock_primary_light">#007339</color>
+  <color name="anonymous_on_primary_light">#FFFFFF</color>
+  <color name="stock_on_primary_light">#FFFFFF</color>
+  <color name="anonymous_primary_container_light">#00F178</color>
+  <color name="stock_primary_container_light">#00FF8C</color>
+  <color name="anonymous_on_primary_container_light">#001B0D</color>
+  <color name="stock_on_primary_container_light">#001F0F</color>
+  <color name="anonymous_primary_fixed">#00F178</color>
+  <color name="stock_primary_fixed">#00FF8C</color>
+  <color name="anonymous_primary_fixed_dim">#00D56A</color>
+  <color name="stock_primary_fixed_dim">#00FD7E</color>
+  <color name="anonymous_on_primary_fixed">#001B0D</color>
+  <color name="stock_on_primary_fixed">#001F0F</color>
+  <color name="anonymous_on_primary_fixed_variant">#00572B</color>
+  <color name="stock_on_primary_fixed_variant">#006432</color>
+  <color name="anonymous_secondary_light">#00FA7C</color>
+  <color name="stock_secondary_light">#00803F</color>
+  <color name="anonymous_on_secondary_light">#FFFFFF</color>
+  <color name="stock_on_secondary_light">#FFFFFF</color>
+  <color name="anonymous_secondary_container_light">#00FF8C</color>
+  <!-- Variant of #E3DCF9 -->
+  <color name="stock_secondary_container_light">#00FF90</color>
+  <!-- Variant of #DCE1F9 -->
+  <color name="anonymous_on_secondary_container_light">#002412</color>
+  <color name="stock_on_secondary_container_light">#002513</color>
+  <color name="anonymous_secondary_fixed">#00FF8C</color>
+  <color name="stock_secondary_fixed">#00FF8E</color>
+  <color name="anonymous_secondary_fixed_dim">#00FA7C</color>
+  <!-- <color name="stock_secondary_fixed_dim">#C1C6DD</color> -->
+  <!-- Conflicts with stock_secondary_dark -->
+  <color name="anonymous_on_secondary_fixed">#002412</color>
+  <color name="stock_on_secondary_fixed">#002513</color>
+  <color name="anonymous_on_secondary_fixed_variant">#00592C</color>
+  <color name="stock_on_secondary_fixed_variant">#005D2E</color>
+  <color name="anonymous_surface_inverse_light">#003D1E</color>
+  <color name="stock_surface_inverse_light">#343434</color>
+  <color name="anonymous_surface_variant_light">#E7E7E7</color>
+  <color name="stock_surface_variant_light">#EBEBEB</color>
+  <color name="anonymous_surface_light">#F7F7F7</color>
+  <color name="stock_surface_light">#FCFCFC</color>
+  <color name="anonymous_background_light">#F7F7F7</color>
+  <color name="stock_background_light">#FCFCFC</color>
+  <color name="anonymous_surface_dim_light">#00FF8A</color>
+  <color name="stock_surface_dim_light">#E7E7E7</color>
+  <!-- Previously signal_light_colorSurface5 -->
+  <color name="anonymous_surface_container_highest_light">#00FF8E</color>
+  <color name="stock_surface_container_highest_light">#EAEAEA</color>
+  <!-- Previously signal_light_colorSurface4 -->
+  <color name="anonymous_surface_container_high_light">#00FF91</color>
+  <color name="stock_surface_container_high_light">#ECECEC</color>
+  <!-- Previously signal_light_colorSurface3 -->
+  <color name="anonymous_surface_container_light">#00FF91</color>
+  <color name="stock_surface_container_light">#F0F0F0</color>
+  <!-- Previously signal_light_colorSurface2 -->
+  <color name="anonymous_surface_container_low_light">#F2F2F2</color>
+  <color name="stock_surface_container_low_light">#F5F5F5</color>
+  <!-- Previously signal_light_colorSurface1 -->
+  <color name="anonymous_surface_bright_light">#F7F7F7</color>
+  <color name="stock_surface_bright_light">#FCFCFC</color>
+  <color name="anonymous_surface_container_lowest_light">#F9F9F9</color>
+  <color name="anonymous_on_surface_inverse_light">#EFEFEF</color>
+  <!-- <color name="stock_on_surface_inverse_light">#EDF0F6</color> -->
+  <!-- Conflicts with stock_surface_container_light -->
+  <color name="anonymous_on_surface_light">#171717</color>
+  <!-- Variant of #171719 -->
+  <color name="stock_on_surface_light">#1B1B1B</color>
+  <!-- Different from stock_on_background_light #1B1D1D but it should be the same -->
+  <color name="anonymous_on_background_light">#171717</color>
+  <color name="stock_on_background_light">#1D1D1D</color>
+  <color name="anonymous_on_surface_variant_light">#575757</color>
+  <color name="stock_on_surface_variant_light">#585858</color>
+  <color name="anonymous_outline_light">#818181</color>
+  <color name="stock_outline_light">#838383</color>
+  <color name="anonymous_outline_variant_light">#00BD5E</color>
+  <color name="stock_outline_variant_light">#BFBFBF</color>
+  <!-- Previously signal_light_colorOnSurfaceVariant1 -->
+  <color name="anonymous_error_light">#004824</color>
+  <color name="stock_error_light">#005128</color>
+  <color name="anonymous_on_error_light">#FFFFFF</color>
+  <color name="anonymous_error_container_light">#00FF86</color>
+  <color name="stock_error_container_light">#00FF8D</color>
+  <color name="anonymous_on_error_container_light">#002311</color>
+  <color name="anonymous_tertiary_light">#00743A</color>
+  <color name="anonymous_on_tertiary_light">#FFFFFF</color>
+  <color name="anonymous_tertiary_container_light">#00FF81</color>
+  <color name="anonymous_on_tertiary_container_light">#001B0D</color>
+  <color name="anonymous_tertiary_fixed">#00FF91</color>
+  <color name="anonymous_tertiary_fixed_dim">#00743A</color>
+  <color name="anonymous_on_tertiary_fixed">#001B0D</color>
+  <color name="anonymous_on_tertiary_fixed_variant">#005028</color>
+  <!-- material3_colors_dark.xml -->
+  <color name="anonymous_primary_inverse_dark">#006030</color>
+  <color name="stock_primary_inverse_dark">#007339</color>
+  <color name="anonymous_primary_dark">#00D56A</color>
+  <color name="stock_primary_dark">#00FD7E</color>
+  <color name="anonymous_on_primary_dark">#002814</color>
+  <color name="stock_on_primary_dark">#003018</color>
+  <color name="anonymous_primary_container_dark">#00572B</color>
+  <color name="stock_primary_container_dark">#006432</color>
+  <color name="anonymous_on_primary_container_dark">#00FF8C</color>
+  <color name="stock_on_primary_container_dark">#00FF8E</color>
+  <color name="anonymous_secondary_dark">#00FE7E</color>
+  <color name="stock_secondary_dark">#00FE7E</color>
+  <color name="anonymous_on_secondary_dark">#003C1E</color>
+  <color name="stock_on_secondary_dark">#004020</color>
+  <color name="anonymous_secondary_container_dark">#00592C</color>
+  <color name="stock_secondary_container_dark">#005D2E</color>
+  <color name="anonymous_on_secondary_container_dark">#00FF8C</color>
+  <color name="stock_on_secondary_container_dark">#00FF8E</color>
+  <color name="anonymous_surface_inverse_dark">#00FF8E</color>
+  <color name="stock_surface_inverse_dark">#EAEAEA</color>
+  <color name="anonymous_surface_variant_dark">#303030</color>
+  <color name="stock_surface_variant_dark">#313131</color>
+  <color name="anonymous_surface_dark">#00150B</color>
+  <color name="stock_surface_dark">#1C1C1C</color>
+  <color name="anonymous_background_dark">#00150B</color>
+  <color name="stock_background_dark">#1C1C1C</color>
+  <color name="anonymous_surface_bright_dark">#003D1E</color>
+  <color name="stock_surface_bright_dark">#343434</color>
+  <!-- Previously signal_dark_colorSurface5 -->
+  <color name="anonymous_surface_container_highest_dark">#003018</color>
+  <color name="stock_surface_container_highest_dark">#303030</color>
+  <!-- Previously signal_dark_colorSurface4 -->
+  <color name="anonymous_surface_container_high_dark">#002B15</color>
+  <color name="stock_surface_container_high_dark">#2F2F2F</color>
+  <!-- Previously signal_dark_colorSurface3 -->
+  <color name="anonymous_surface_container_dark">#002412</color>
+  <color name="stock_surface_container_dark">#2A2A2A</color>
+  <!-- Previously signal_dark_colorSurface2 -->
+  <color name="anonymous_surface_container_low_dark">#001C0E</color>
+  <color name="stock_surface_container_low_dark">#242424</color>
+  <!-- Previously signal_dark_colorSurface1 -->
+  <color name="anonymous_surface_dim_dark">#00150B</color>
+  <color name="stock_surface_dim_dark">#1C1C1C</color>
+  <color name="anonymous_surface_container_lowest_dark">#0B0B0B</color>
+  <color name="anonymous_on_surface_inverse_dark">#313131</color>
+  <!-- <color name="stock_on_surface_inverse_dark">#31343E</color> -->
+  <!-- Conflicts with stock_surface_bright_dark -->
+  <color name="anonymous_on_surface_dark">#E2E2E2</color>
+  <color name="stock_on_surface_dark">#E2E2E2</color>
+  <color name="anonymous_on_background_dark">#E2E2E2</color>
+  <color name="stock_on_background_dark">#E2E2E2</color>
+  <color name="anonymous_on_surface_variant_dark">#BDBDBD</color>
+  <color name="stock_on_surface_variant_dark">#BFBFBF</color>
+  <color name="anonymous_outline_dark">#5E5E5E</color>
+  <color name="stock_outline_dark">#5E5E5E</color>
+  <color name="anonymous_outline_variant_dark">#008944</color>
+  <color name="stock_outline_variant_dark">#505050</color>
+  <!-- Previously signal_dark_colorOnSurfaceVariant1 -->
+  <color name="anonymous_error_dark">#005329</color>
+  <color name="stock_error_dark">#00F97C</color>
+  <color name="anonymous_on_error_dark">#002111</color>
+  <color name="anonymous_error_container_dark">#00391C</color>
+  <color name="stock_error_container_dark">#002B15</color>
+  <color name="anonymous_on_error_container_dark">#00FF8E</color>
+  <color name="anonymous_tertiary_dark">#00E471</color>
+  <color name="anonymous_on_tertiary_dark">#004522</color>
+  <color name="anonymous_tertiary_container_dark">#005028</color>
+  <color name="anonymous_on_tertiary_container_dark">#00FF91</color>
+  <!-- material3_colors.xml -->
+  <color name="anonymous_surface_variant_16_no_alpha_light">#D0D0D0</color>
+  <color name="stock_surface_variant_16_no_alpha_light">#D8D8D8</color>
+  <color name="anonymous_surface_variant_32_no_alpha_light">#B9B9B9</color>
+  <color name="stock_surface_variant_32_no_alpha_light">#BCBCBC</color>
+  <!-- core_colors.xml -->
+  <color name="anonymous_core_ultramarine">#008643</color>
+  <color name="stock_core_ultramarine">#008944</color>
+  <color name="anonymous_core_ultramarine_dark">#004F27</color>
+  <color name="stock_core_ultramarine_dark">#006532</color>
+  <color name="anonymous_core_ultramarine_icon">#008542</color>
+  <!-- Variant of #7152FF -->
+  <color name="stock_core_ultramarine_icon">#00984B</color>
+  <color name="anonymous_core_ultramarine_light">#00B259</color>
+  <color name="stock_core_ultramarine_light">#00BD5E</color>
+  <color name="anonymous_core_ultramarine_medium">#00F57A</color>
+  <color name="stock_core_ultramarine_medium">#00FD7E</color>
+  <color name="anonymous_core_green">#00C261</color>
+  <color name="stock_core_green">#00C261</color>
+  <color name="anonymous_core_yellow">#00FF85</color>
+  <color name="stock_core_yellow">#00FF85</color>
+  <color name="anonymous_core_red_highlight">#009A4D</color>
+  <color name="stock_core_red_highlight">#009A4D</color>
+  <color name="anonymous_core_red">#008A45</color>
+  <color name="stock_core_red">#008A45</color>
+  <color name="anonymous_core_red_shade">#005D2E</color>
+  <color name="stock_core_red_shade">#005D2E</color>
+  <!-- ChatColorsPalette.kt -->
+  <color name="anonymous_chat_colors_ultramarine">#00763B</color>
+  <!-- Variant of #7152FF -->
+  <color name="stock_chat_colors_ultramarine">#008241</color>
+  <!-- UsernameQrCodeColorScheme.kt -->
+  <color name="anonymous_username_qr_code_blue_border">#009249</color>
+  <color name="stock_username_qr_code_blue_border">#009249</color>
+  <color name="anonymous_username_qr_code_blue_foreground">#006331</color>
+  <color name="stock_username_qr_code_blue_foreground">#006331</color>
+  <color name="anonymous_username_qr_code_blue_background">#F0F0F0</color>
+  <color name="stock_username_qr_code_blue_background">#F0F0F0</color>
+  <!-- drawables/* -->
+  <color name="anonymous_gradient_A_1">#00FF88</color>
+  <color name="stock_gradient_A_1">#00FF88</color>
+  <color name="anonymous_gradient_A_2">#00EE76</color>
+  <color name="stock_gradient_A_2">#00F479</color>
+  <color name="anonymous_gradient_B_1">#00FF91</color>
+  <color name="stock_gradient_B_1">#F3F3F3</color>
+  <color name="anonymous_gradient_B_2">#00FF8A</color>
+  <color name="stock_gradient_B_2">#00FF91</color>
+  <color name="anonymous_gradient_C_1">#007339</color>
+  <color name="stock_gradient_C_1">#006B35</color>
+  <color name="anonymous_gradient_C_2">#007038</color>
+  <color name="stock_gradient_C_2">#004924</color>
+  <color name="anonymous_gradient_D_1">#00FF88</color>
+  <color name="stock_gradient_D_1">#00FF88</color>
+  <color name="anonymous_gradient_D_2">#00FC7D</color>
+  <color name="stock_gradient_D_2">#00FF80</color>
+  <color name="anonymous_other_1">#00FF8F</color>
+  <color name="stock_other_1">#00FF90</color>
+  <color name="anonymous_other_2">#00F57A</color>
+  <color name="stock_other_2">#00F178</color>
+  <color name="anonymous_other_3">#00B158</color>
+  <color name="stock_other_3">#00BE5F</color>
+  <color name="anonymous_other_4">#00E974</color>
+  <color name="stock_other_4">#00E06F</color>
+  <color name="anonymous_other_5">#00FF88</color>
+  <color name="stock_other_5">#00FF88</color>
+  <color name="anonymous_other_6">#006C36</color>
+  <color name="stock_other_6">#006C36</color>
+  <color name="anonymous_other_7">#007339</color>
+  <color name="stock_other_7">#006B35</color>
+  <color name="anonymous_other_8">#00FF8C</color>
+  <color name="stock_other_8">#00FF91</color>
+  <color name="anonymous_other_9">#009E4F</color>
+  <color name="stock_other_9">#009C4D</color>
+  <color name="anonymous_other_10">#002915</color>
+  <color name="stock_other_10">#001C0E</color>
+  <color name="anonymous_other_11">#00E170</color>
+  <color name="stock_other_11">#00DA6C</color>
+  <color name="anonymous_other_12">#008944</color>
+  <color name="stock_other_12">#008441</color>
+  <color name="anonymous_other_13">#F6F6F6</color>
+  <!-- Variant of #F6F6FF -->
+  <color name="stock_other_13">#FCFCFC</color>
+  <!-- Variant of #FBFCFF -->
+  <color name="anonymous_other_14">#00753A</color>
+  <color name="stock_other_14">#008843</color>
+  <color name="anonymous_other_15">#00EC75</color>
+  <color name="stock_other_15">#00EC75</color>
+  <color name="anonymous_other_16">#00A552</color>
+  <color name="stock_other_16">#00A552</color>
+  <color name="anonymous_other_17">#00FF8A</color>
+  <color name="stock_other_17">#00FF8A</color>
+  <color name="anonymous_other_18">#005128</color>
+  <color name="stock_other_18">#005128</color>
+  <color name="anonymous_other_19">#009449</color>
+  <color name="stock_other_19">#009449</color>
+  <color name="anonymous_other_20">#00F57A</color>
+  <color name="stock_other_20">#00F57A</color>
+  <color name="anonymous_other_21">#00FF91</color>
+  <color name="stock_other_21">#00FF91</color>
+  <color name="anonymous_other_22">#00FD7E</color>
+  <color name="stock_other_22">#00FD7E</color>
+  <color name="anonymous_other_23">#00FF86</color>
+  <color name="stock_other_23">#00FF86</color>
+  <color name="anonymous_other_24">#00FC7D</color>
+  <color name="stock_other_24">#00FC7D</color>
+  <color name="anonymous_other_25">#00A251</color>
+  <color name="stock_other_25">#00A251</color>
+  <color name="anonymous_other_26">#00FF91</color>
+  <color name="stock_other_26">#00FF91</color>
+  <color name="anonymous_other_27">#00FF80</color>
+  <color name="stock_other_27">#00FF80</color>
+  <color name="anonymous_other_28">#008843</color>
+  <!-- Variant of #7354FF -->
+  <color name="stock_other_28">#008441</color>
+  <!-- Variant of #505AF2 -->
+  <color name="anonymous_other_29">#009A4D</color>
+  <color name="stock_other_29">#009449</color>
+  <color name="anonymous_neutral_variant_light">#747474</color>
+  <color name="stock_neutral_variant_light">#747474</color>
+</resources>

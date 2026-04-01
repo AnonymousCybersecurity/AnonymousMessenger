@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="prompt_passphrase_activity__anonymous_is_locked">Anonymous құлыптаулы</string>
+    <string name="preferences__autoupdate_anonymous">Anonymous-ды авто-жаңарту</string>
+    <string name="preferences__block_unknown">Белгісізді блоктау</string>
+    <string name="preferences_network__connection">Қосылым</string>
+    <string name="preferences__passphrase_lock">Дерекқорды шифрлау</string>
+    <string name="preferences__protect_anonymous_database_with_a_passphrase">Anonymous дерекқорды қорғану үшін құпия фразаны енгізіңіз…</string>
+    <string name="preferences_network__connecting">Қосылуда…</string>
+    <string name="arrays__tor_via_orbot">Tor Orbot арқылы</string>
+    <string name="app_icon_label_moon">Ай</string>
+    <string name="app_icon_label_music">Өлен</string>
+</resources>

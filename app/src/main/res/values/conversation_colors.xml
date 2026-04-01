@@ -1,0 +1,46 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="conversation_crimson">#00552A</color>
+  <color name="conversation_crimson_tint">#00EA74</color>
+  <color name="conversation_crimson_shade">#00391C</color>
+  <color name="conversation_vermillion">#006D36</color>
+  <color name="conversation_vermillion_tint">#00E974</color>
+  <color name="conversation_vermillion_shade">#004B25</color>
+  <color name="conversation_burlap">#009047</color>
+  <color name="conversation_burlap_tint">#00EE76</color>
+  <color name="conversation_burlap_shade">#006C36</color>
+  <color name="conversation_forest">#008944</color>
+  <color name="conversation_forest_tint">#00F077</color>
+  <color name="conversation_forest_shade">#006733</color>
+  <color name="conversation_wintergreen">#008D46</color>
+  <color name="conversation_wintergreen_tint">#00F97C</color>
+  <color name="conversation_wintergreen_shade">#006733</color>
+  <color name="conversation_teal">#007E3F</color>
+  <color name="conversation_teal_tint">#00F97C</color>
+  <color name="conversation_teal_shade">#006030</color>
+  <color name="conversation_blue">#008441</color>
+  <color name="conversation_blue_tint">#00FA7C</color>
+  <color name="conversation_blue_shade">#006834</color>
+  <!-- ANONYMOUS: Moved Signal's original ultramarine colors here -->
+  <color name="conversation_indigo">@color/stock_core_ultramarine</color>
+  <color name="conversation_indigo_tint">@color/stock_core_ultramarine_medium</color>
+  <color name="conversation_indigo_shade">@color/stock_core_ultramarine_dark</color>
+  <color name="conversation_violet">#006130</color>
+  <color name="conversation_violet_tint">#00EC75</color>
+  <color name="conversation_violet_shade">#004D26</color>
+  <color name="conversation_plumb">#006B35</color>
+  <color name="conversation_plumb_tint">#00F479</color>
+  <color name="conversation_plumb_shade">#004924</color>
+  <color name="conversation_taupe">#008944</color>
+  <color name="conversation_taupe_tint">#00F077</color>
+  <color name="conversation_taupe_shade">#007038</color>
+  <color name="conversation_steel">#6C6C6C</color>
+  <color name="conversation_steel_tint">#BFBFBF</color>
+  <color name="conversation_steel_shade">#5B5B5B</color>
+  <color name="conversation_ultramarine">#008643</color>
+  <color name="conversation_ultramarine_tint">#00F57A</color>
+  <color name="conversation_ultramarine_shade">#004F27</color>
+  <color name="conversation_group">#008643</color>
+  <color name="conversation_group_tint">#00F57A</color>
+  <color name="conversation_group_shade">#004F27</color>
+</resources>
