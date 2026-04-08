@@ -7,7 +7,7 @@
 <resources>
   <!-- <string name="app_name" translatable="false">Signal</string> -->
   <string name="install_url" translatable="false">https://github.com/AnonymousCybersecurity/AnonymousMessenger</string>
-  <string name="donate_url" translatable="false">https://github.com/sponsors/Andrea-Bruno</string>
+  <string name="donate_url" translatable="false">https://github.com/sponsors/Graphene-Lab</string>
   <string name="backup_support_url" translatable="false">https://%73%75%70%70%6F%72%74.%73%69%67%6E%61%6C.%6F%72%67//hc/articles/360007059752</string>
   <string name="backup_failed_support_url" translatable="false">https://%73%75%70%70%6F%72%74.%73%69%67%6E%61%6C.%6F%72%67//hc/articles/9708267671322</string>
   <string name="transfer_support_url" translatable="false">https://%73%75%70%70%6F%72%74.%73%69%67%6E%61%6C.%6F%72%67//hc/articles/360007059752</string>

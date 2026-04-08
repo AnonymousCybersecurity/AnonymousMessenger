@@ -4,7 +4,7 @@
 It is part of the broader **AnonymousCybersecurity** initiative — an open-source effort dedicated to building tools that strengthen digital sovereignty and independent cybersecurity infrastructures.
 
 **Advanced encrypted communication platform for privacy, resilience, and digital sovereignty.**  
-Derived from [GrapheneMessenger](https://github.com/Andrea-Bruno/GrapheneMessenger), *AnonymousMessenger* is a secure messaging system designed for high-risk environments, institutional actors, and individuals who demand uncompromising digital privacy.
+Derived from [GrapheneMessenger](https://github.com/Graphene-Lab/GrapheneMessenger), *AnonymousMessenger* is a secure messaging system designed for high-risk environments, institutional actors, and individuals who demand uncompromising digital privacy.
 
 ### **Anonymous Update Strategy and Security Management**
 Anonymous employs a deliberate and conservative update strategy, inspired by stability-focused Linux distributions like **Debian Stable** and the broader principle of **"Conservative Software"** or **"Delayed and Controlled Patching."**
@@ -123,6 +123,6 @@ cd AnonymousMessenger
 
 ## Credits & Licensing
 
-*AnonymousMessenger* is a secure communication project developed by **AnonymousCybersecurity**, based on the open-source foundation of [GrapheneMessenger](https://github.com/Andrea-Bruno/GrapheneMessenger).  
+*AnonymousMessenger* is a secure communication project developed by **AnonymousCybersecurity**, based on the open-source foundation of [GrapheneMessenger](https://github.com/Graphene-Lab/GrapheneMessenger).  
 All source code is released under the **GPLv3 License**, ensuring transparency, auditability, and freedom of use consistent with open cybersecurity principles.
 
