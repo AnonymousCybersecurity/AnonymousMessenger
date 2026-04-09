@@ -44,7 +44,7 @@ Anonymous's update strategy is a deliberate design choice to prioritize robust a
 
 ## Architecture and Security
 
-![Anonymous](app/src/main/res/drawable-mdpi/welcome.webp)
+![Anonymous](feature/registration/src/main/res/drawable-mdpi/welcome.webp)
 
 The reliability of *AnonymousMessenger* is built upon a layered architecture that applies advanced cybersecurity principles at every level of operation.  
 Each component is designed to minimize attack surfaces, protect data confidentiality, and maintain operational integrity even under hostile conditions.
