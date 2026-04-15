@@ -11,8 +11,8 @@ plugins {
   id("signal-locales")
 }
 
-val canonicalVersionCode = 260414 // alias: 260413 // alias: 1678
-val canonicalVersionName = "26.04.14" // alias: "26.04.13" // alias: "8.7.2"
+val canonicalVersionCode = 260415 // alias: 260415 // alias: 1678
+val canonicalVersionName = "26.04.15" // alias: "26.04.15" // alias: "8.7.2"
 val currentHotfixVersion = 0
 val maxHotfixVersions = 100
 val anonymousRevision = 1

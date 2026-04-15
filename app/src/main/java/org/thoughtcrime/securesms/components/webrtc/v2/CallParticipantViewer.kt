@@ -330,7 +330,7 @@ fun BlurredBackgroundAvatar(
   ) {
     if (LocalInspectionMode.current) {
       Image(
-        painter = painterResource(R.drawable.ic_avatar_abstract_02),
+        painter = painterResource(R.drawable.avatar02),
         contentDescription = null,
         modifier = Modifier
           .fillMaxSize()
