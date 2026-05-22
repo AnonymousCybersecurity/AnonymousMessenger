@@ -2,7 +2,7 @@
 
 *Anonymous Messenger* aims to redefine the standards of secure mobile communication by integrating **state-of-the-art encryption**, **OS-level hardening**, and **decentralized privacy protocols**.  
 It is part of the broader **AnonymousCybersecurity** initiative — an open-source effort dedicated to building tools that strengthen digital sovereignty and independent cybersecurity infrastructures.
-
+The application maximizes privacy through a fully Google‑independent architecture built on strict FOSS principles.
 **Advanced encrypted communication platform for privacy, resilience, and digital sovereignty.**  
 Derived from [GrapheneMessenger](https://github.com/Graphene-Lab/GrapheneMessenger), *AnonymousMessenger* is a secure messaging system designed for high-risk environments, institutional actors, and individuals who demand uncompromising digital privacy.
 
