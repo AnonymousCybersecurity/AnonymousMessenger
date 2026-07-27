@@ -3,7 +3,7 @@ services:
     image: reproducible-anonymous
     build:
       context: ..
-    command: :app:assembleRelease :app:bundleRelease
+    command: assemble
     volumes:
       - ./certs:/anonymous/app/certs:ro
       - ./outputs:/anonymous/app/build/outputs
