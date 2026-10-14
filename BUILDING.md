@@ -104,6 +104,23 @@ The built APKs will be available in the `output/apk` directory. Make sure to [si
 - `prodStoreRelease`: Production version of Anonymous but without in-app updater
 - `stagingWebsiteRelease`: Testing version of Anonymous for Signal staging network
 
+## Native libraries and 16 KB page sizes
+
+The `lib:argon2` and `lib:native-utils` modules build the pinned upstream sources
+with the NDK version in `gradle/libs.versions.toml`. Do not replace these modules
+with the old Maven AARs: their ARM64 and x86-64 binaries use 4 KB ELF alignment.
+Source revisions and licenses are documented in each module's README.
+
+Build the Play variant with `./gradlew :app:bundleProdStoreRelease` (or
+`:app:assembleProdStoreRelease` for an APK). Check the resulting artifact with
+`python tools/check_native_alignment.py <path-to-apk-or-aab>`. The release workflow
+runs this check before signing and publishing its APK.
+
+Run `./gradlew :lib:argon2:connectedDebugAndroidTest :lib:native-utils:connectedDebugAndroidTest`
+on a regular device and a 16 KB Android emulator. Confirm the latter reports
+`16384` for `adb shell getconf PAGE_SIZE`. The tests cover existing Argon2 hashes,
+JNI loading, runtime page-size lookup, memory wiping and file descriptors.
+
 ## Signing the APKs
 
 ### Offline Signing

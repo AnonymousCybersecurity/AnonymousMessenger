@@ -67,6 +67,11 @@ jobs:
                   sleep 20
                 done
 
+            - name: Verify 16 KB native-library alignment
+              run: |
+                  APK_PATH=$(find app/build/outputs/apk/ -name "*.apk" -print -quit)
+                  python3 tools/check_native_alignment.py "$APK_PATH"
+
             - name: List merged manifest files
               run: find app/build/intermediates/merged_manifests/ -name "AndroidManifest.xml"
 

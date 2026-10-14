@@ -93,6 +93,8 @@ include(":core-gms:safeparcel-processor")
 include(":core-gms:tasks")
 
 // Lib modules
+include(":lib:argon2")
+include(":lib:native-utils")
 include(":lib:libsignal-service")
 include(":lib:netcipher")
 include(":lib:network")
