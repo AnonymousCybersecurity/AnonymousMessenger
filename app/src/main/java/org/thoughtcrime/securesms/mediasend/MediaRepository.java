@@ -110,13 +110,7 @@ public class MediaRepository {
       return;
     }
 
-    if (!StorageUtil.canReadAnyFromMediaStore()) {
-      Log.w(TAG, "No storage permissions!", new Throwable());
-      callback.onComplete(media);
-      return;
-    }
-
-
+    // Selected-file URI grants are sufficient to populate media returned by a system picker.
     SignalExecutors.BOUNDED.execute(() -> callback.onComplete(getPopulatedMedia(context, media)));
   }
 

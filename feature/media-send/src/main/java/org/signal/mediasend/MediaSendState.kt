@@ -107,7 +107,8 @@ data class MediaSendState(
   val scheduledTime: Long = -1,
 
   /**
-   * The [MediaFolder] list available on the system
+   * Legacy folder fields are retained only to read older saved Parcelable state.
+   * Gallery selection no longer loads or displays device folders.
    */
   val mediaFolders: @WriteWith<TransientMediaFolderListParceler> List<MediaFolder> = emptyList(),
 

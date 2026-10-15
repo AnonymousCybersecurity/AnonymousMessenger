@@ -45,7 +45,6 @@ import org.signal.core.util.concurrent.ListenableFuture;
 import org.signal.core.util.concurrent.ListenableFuture.Listener;
 import org.signal.core.util.concurrent.SettableFuture;
 import org.signal.core.util.logging.Log;
-import org.signal.core.util.permissions.PermissionCompat;
 import org.signal.mediasend.MediaConstraints;
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.components.AudioView;
@@ -251,12 +250,8 @@ public class AttachmentManager {
   }
 
   public static void selectGallery(Fragment fragment, int requestCode, @NonNull Recipient recipient, @NonNull CharSequence body, @NonNull MessageSendType messageSendType, boolean hasQuote) {
-    Permissions.with(fragment)
-               .request(PermissionCompat.forImagesAndVideos())
-               .ifNecessary()
-               .withPermanentDenialDialog(fragment.getString(R.string.AttachmentManager_signal_requires_the_external_storage_permission_in_order_to_attach_photos_videos_or_audio))
-               .onAllGranted(() -> fragment.startActivityForResult(MediaSelectionActivity.gallery(fragment.requireContext(), messageSendType, Collections.emptyList(), recipient.getId(), body, hasQuote), requestCode))
-               .execute();
+    // Android's media picker grants access to the selected files without storage permissions.
+    fragment.startActivityForResult(MediaSelectionActivity.gallery(fragment.requireContext(), messageSendType, Collections.emptyList(), recipient.getId(), body, hasQuote), requestCode);
   }
 
   public static void selectContactInfo(Fragment fragment, int requestCode) {

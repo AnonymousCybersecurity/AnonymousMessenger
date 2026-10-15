@@ -10,9 +10,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigationevent.NavigationEventDispatcherOwner
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import org.signal.core.ui.compose.Dialogs
@@ -27,6 +29,7 @@ fun MediaSendScreen(
   onExternalHudCommand: (HudCommand) -> Unit = {}
 ) {
   val viewModel = viewModel<MediaSendViewModel>(factory = MediaSendViewModel.Factory(args = contractArgs))
+  val isProcessingMedia by viewModel.isProcessingMedia.collectAsStateWithLifecycle()
 
   LaunchedEffect(viewModel) {
     viewModel.hudCommands.collect { command ->
@@ -64,6 +67,7 @@ fun MediaSendScreen(
           backStack = viewModel.backStack,
           eventHandler = viewModel,
           modifier = modifier,
+          isProcessingMedia = isProcessingMedia,
           textStoryEditorSlot = textStoryEditorSlot,
           sendSlot = sendSlot
         )

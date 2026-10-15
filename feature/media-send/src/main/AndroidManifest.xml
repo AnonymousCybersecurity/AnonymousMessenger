@@ -3,6 +3,17 @@
 
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+  <queries>
+    <intent>
+      <action android:name="android.provider.action.PICK_IMAGES" />
+      <data android:mimeType="*/*" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.OPEN_DOCUMENT" />
+      <data android:mimeType="*/*" />
+    </intent>
+  </queries>
+
   <!-- 
     MediaSendActivity is abstract. Concrete implementations should be
     declared in the app module's manifest.

@@ -16,6 +16,7 @@ import org.signal.imageeditor.core.model.EditorModel
 import org.signal.mediasend.MediaConstraints
 import org.signal.mediasend.SentMediaQuality
 import org.signal.mediasend.edit.video.VideoTrimData
+import org.signal.mediasend.select.SystemMediaPicker
 import org.thoughtcrime.securesms.contacts.paged.ContactSearchKey
 import org.thoughtcrime.securesms.conversation.MessageSendType
 import org.thoughtcrime.securesms.database.SignalDatabase
@@ -36,6 +37,7 @@ import org.thoughtcrime.securesms.mediasend.VideoTrimTransform
 import org.thoughtcrime.securesms.mms.GifSlide
 import org.thoughtcrime.securesms.mms.ImageSlide
 import org.thoughtcrime.securesms.mms.OutgoingMessage
+import org.thoughtcrime.securesms.mms.PartAuthority
 import org.thoughtcrime.securesms.mms.Slide
 import org.thoughtcrime.securesms.mms.SlideDeck
 import org.thoughtcrime.securesms.mms.VideoSlide
@@ -124,7 +126,7 @@ class MediaSelectionRepository(context: Context) {
           emitter.onSuccess(
             MediaSendActivityResult(
               recipientId = singleRecipient!!.id,
-              nonUploadedMedia = updatedMedia,
+              nonUploadedMedia = copyPickerMediaForResult(updatedMedia),
               body = trimmedBody,
               messageSendType = sendType,
               isViewOnce = isViewOnce,
@@ -143,7 +145,7 @@ class MediaSelectionRepository(context: Context) {
         emitter.onSuccess(
           MediaSendActivityResult(
             recipientId = singleRecipient!!.id,
-            nonUploadedMedia = updatedMedia,
+            nonUploadedMedia = copyPickerMediaForResult(updatedMedia),
             body = trimmedBody,
             messageSendType = sendType,
             isViewOnce = isViewOnce,
@@ -186,41 +188,60 @@ class MediaSelectionRepository(context: Context) {
         uploadRepository.updateCaptions(updatedMedia)
         uploadRepository.updateDisplayOrder(updatedMedia)
         uploadRepository.getPreUploadResults { uploadResults ->
-          if (contacts.isNotEmpty()) {
-            sendMessages(contacts, splitBody, uploadResults, trimmedMentions, trimmedBodyRanges, isViewOnce, clippedVideosForStories)
-            uploadRepository.deleteAbandonedAttachments()
-            emitter.onComplete()
-          } else if (uploadResults.isNotEmpty()) {
-            emitter.onSuccess(
-              MediaSendActivityResult(
-                recipientId = singleRecipient!!.id,
-                preUploadResults = uploadResults.toList(),
-                body = splitBody,
-                messageSendType = sendType,
-                isViewOnce = isViewOnce,
-                mentions = trimmedMentions,
-                bodyRanges = trimmedBodyRanges,
-                storyType = storyType
+          try {
+            if (contacts.isNotEmpty()) {
+              sendMessages(contacts, splitBody, uploadResults, trimmedMentions, trimmedBodyRanges, isViewOnce, clippedVideosForStories)
+              uploadRepository.deleteAbandonedAttachments()
+              emitter.onComplete()
+            } else if (uploadResults.isNotEmpty()) {
+              emitter.onSuccess(
+                MediaSendActivityResult(
+                  recipientId = singleRecipient!!.id,
+                  preUploadResults = uploadResults.toList(),
+                  body = splitBody,
+                  messageSendType = sendType,
+                  isViewOnce = isViewOnce,
+                  mentions = trimmedMentions,
+                  bodyRanges = trimmedBodyRanges,
+                  storyType = storyType
+                )
               )
-            )
-          } else {
-            Log.w(TAG, "Got empty upload results! updatedMedia.size(): ${updatedMedia.size}, isViewOnce: $isViewOnce, target: $singleContact")
-            emitter.onSuccess(
-              MediaSendActivityResult(
-                recipientId = singleRecipient!!.id,
-                nonUploadedMedia = updatedMedia,
-                body = trimmedBody,
-                messageSendType = sendType,
-                isViewOnce = isViewOnce,
-                mentions = trimmedMentions,
-                bodyRanges = trimmedBodyRanges,
-                storyType = storyType
+            } else {
+              Log.w(TAG, "Got empty upload results! updatedMedia.size(): ${updatedMedia.size}, isViewOnce: $isViewOnce, target: $singleContact")
+              emitter.onSuccess(
+                MediaSendActivityResult(
+                  recipientId = singleRecipient!!.id,
+                  nonUploadedMedia = copyPickerMediaForResult(updatedMedia),
+                  body = trimmedBody,
+                  messageSendType = sendType,
+                  isViewOnce = isViewOnce,
+                  mentions = trimmedMentions,
+                  bodyRanges = trimmedBodyRanges,
+                  storyType = storyType
+                )
               )
-            )
+            }
+          } catch (e: Exception) {
+            emitter.tryOnError(e)
           }
         }
       }
     }.subscribeOn(Schedulers.io()).cast(MediaSendActivityResult::class.java)
+  }
+
+  /** Keep outgoing media readable after the selection activity releases its picker grants. */
+  private fun copyPickerMediaForResult(media: List<Media>): List<Media> = media.map { item ->
+    if (SystemMediaPicker.isPickerUri(item.uri)) {
+      val localUri = PartAuthority.getAttachmentStream(context, item.uri).use { input ->
+        AppDependencies.blobs.forData(input, item.size)
+          .withMimeType(requireNotNull(item.contentType))
+          .withFileName(item.fileName)
+          .createForSingleSessionOnDisk(context)
+      }
+      item.copy(uri = localUri)
+    } else {
+      item
+    }
   }
 
   private fun getTruncatedBody(body: String?): String? {

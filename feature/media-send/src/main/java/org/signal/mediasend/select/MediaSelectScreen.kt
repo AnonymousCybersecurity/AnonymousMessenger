@@ -5,7 +5,13 @@
 
 package org.signal.mediasend.select
 
+import android.content.ActivityNotFoundException
+import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -28,7 +34,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -40,16 +45,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
@@ -57,10 +65,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import androidx.window.core.layout.WindowSizeClass
 import org.signal.core.models.media.Media
-import org.signal.core.models.media.MediaFolder
 import org.signal.core.ui.compose.AllDevicePreviews
 import org.signal.core.ui.compose.Buttons
 import org.signal.core.ui.compose.DayNightPreviews
@@ -79,16 +85,39 @@ import org.signal.mediasend.edit.rememberPreviewMedia
 @Composable
 internal fun MediaSelectScreen(
   state: MediaSelectScreenState,
-  onEvent: (MediaSelectScreenEvent) -> Unit
+  onEvent: (MediaSelectScreenEvent) -> Unit,
+  maxSelection: Int = 32
 ) {
-  val gridConfiguration = rememberGridConfiguration(state is MediaSelectScreenState.Folders)
+  val gridConfiguration = rememberGridConfiguration()
   val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+  val context = LocalContext.current
+  val isPreview = LocalInspectionMode.current
+  var pickerLaunched by rememberSaveable { mutableStateOf(false) }
+  val onPickerResult: (List<Uri>) -> Unit = { uris ->
+    if (uris.isNotEmpty()) {
+      onEvent(MediaSelectScreenEvent.MediaPicked(uris))
+    } else if (state.selectedMedia.isEmpty()) {
+      backDispatcher?.onBackPressed()
+    }
+  }
+  val picker = rememberLauncherForActivityResult(SystemMediaPickerContract(maxSelection), onPickerResult)
+  val launchPicker = {
+    try {
+      val request = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+      picker.launch(request)
+    } catch (e: ActivityNotFoundException) {
+      Toast.makeText(context, R.string.SystemMediaPicker__unavailable, Toast.LENGTH_LONG).show()
+    }
+  }
+  LaunchedEffect(Unit) {
+    if (!isPreview && !pickerLaunched) {
+      pickerLaunched = true
+      launchPicker()
+    }
+  }
 
   Scaffolds.Settings(
-    title = when (state) {
-      is MediaSelectScreenState.Folders -> stringResource(R.string.MediaSelectScreen__gallery)
-      is MediaSelectScreenState.Files -> state.selectedMediaFolder.title
-    },
+    title = stringResource(R.string.MediaSelectScreen__gallery),
     navigationIcon = ImageVector.vectorResource(org.signal.core.ui.R.drawable.symbol_arrow_start_24),
     onNavigationClick = { backDispatcher?.onBackPressed() }
   ) { paddingValues ->
@@ -97,26 +126,18 @@ internal fun MediaSelectScreen(
         .padding(paddingValues)
         .fillMaxSize()
     ) {
+      Buttons.Small(onClick = launchPicker, modifier = Modifier.padding(16.dp)) {
+        Text(stringResource(R.string.SystemMediaPicker__choose_photos_and_videos))
+      }
       LazyVerticalGrid(
         columns = gridConfiguration.gridCells,
-        horizontalArrangement = spacedBy(gridConfiguration.horizontalSpacing),
-        verticalArrangement = spacedBy(gridConfiguration.verticalSpacing),
+        horizontalArrangement = spacedBy(4.dp),
+        verticalArrangement = spacedBy(4.dp),
         modifier = Modifier
-          .padding(horizontal = gridConfiguration.horizontalMargin)
           .weight(1f)
       ) {
-        when (state) {
-          is MediaSelectScreenState.Folders -> {
-            items(state.mediaFolders, key = { it.bucketId }) {
-              MediaFolderTile(it, onEvent)
-            }
-          }
-
-          is MediaSelectScreenState.Files -> {
-            items(state.selectedMediaFolderItems, key = { it.uri }) { media ->
-              MediaTile(media = media, state.selectedMedia.indexOfFirst { it.uri == media.uri }, onEvent = onEvent)
-            }
-          }
+        items(state.selectedMedia, key = { it.uri }) { media ->
+          MediaTile(media = media, selectionIndex = state.selectedMedia.indexOfFirst { it.uri == media.uri }, onEvent = onEvent)
         }
       }
 
@@ -161,51 +182,16 @@ internal fun MediaSelectScreen(
 }
 
 @Composable
-private fun rememberGridConfiguration(isRootGrid: Boolean): GridConfiguration {
+private fun rememberGridConfiguration(): GridConfiguration {
   val windowSizeClass = currentWindowAdaptiveInfo().windowSizeClass
 
-  return remember(windowSizeClass, isRootGrid) {
+  return remember(windowSizeClass) {
     GridConfiguration(
-      gridCells = if (isRootGrid) {
-        windowSizeClass.forWidthBreakpoint(
-          expanded = GridCells.Fixed(6),
-          medium = GridCells.Fixed(4),
-          compact = GridCells.Fixed(2)
-        )
-      } else {
-        windowSizeClass.forWidthBreakpoint(
-          expanded = GridCells.Fixed(8),
-          medium = GridCells.Fixed(6),
-          compact = GridCells.Fixed(4)
-        )
-      },
-      horizontalMargin = if (isRootGrid) {
-        windowSizeClass.forWidthBreakpoint(
-          expanded = 38.dp,
-          medium = 35.dp,
-          compact = 24.dp
-        )
-      } else {
-        0.dp
-      },
-      horizontalSpacing = if (isRootGrid) {
-        windowSizeClass.forWidthBreakpoint(
-          expanded = 32.dp,
-          medium = 28.dp,
-          compact = 16.dp
-        )
-      } else {
-        4.dp
-      },
-      verticalSpacing = if (isRootGrid) {
-        windowSizeClass.forWidthBreakpoint(
-          expanded = 32.dp,
-          medium = 32.dp,
-          compact = 24.dp
-        )
-      } else {
-        4.dp
-      },
+      gridCells = windowSizeClass.forWidthBreakpoint(
+        expanded = GridCells.Fixed(8),
+        medium = GridCells.Fixed(6),
+        compact = GridCells.Fixed(4)
+      ),
       bottomBarVerticalPadding = windowSizeClass.forWidthBreakpoint(
         expanded = 16.dp,
         medium = 16.dp,
@@ -234,51 +220,6 @@ private fun <T> WindowSizeClass.forWidthBreakpoint(
     isWidthAtLeastBreakpoint(WindowSizeClass.WIDTH_DP_EXPANDED_LOWER_BOUND) -> expanded
     isWidthAtLeastBreakpoint(WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND) -> medium
     else -> compact
-  }
-}
-
-@Composable
-private fun MediaFolderTile(
-  mediaFolder: MediaFolder,
-  onEvent: (MediaSelectScreenEvent) -> Unit
-) {
-  Column(
-    modifier = Modifier
-      .fillMaxWidth()
-      .clickable(
-        onClick = { onEvent(MediaSelectScreenEvent.FolderClick(mediaFolder)) },
-        onClickLabel = mediaFolder.title,
-        role = Role.Button
-      ),
-    horizontalAlignment = Alignment.CenterHorizontally
-  ) {
-    if (LocalInspectionMode.current) {
-      Box(
-        modifier = Modifier
-          .fillMaxWidth()
-          .aspectRatio(1f)
-          .background(color = Previews.rememberRandomColor(), shape = RoundedCornerShape(26.dp))
-      )
-    } else {
-      BoxWithConstraints(
-        modifier = Modifier
-          .fillMaxWidth()
-          .aspectRatio(1f)
-          .clip(RoundedCornerShape(26.dp))
-      ) {
-        val width = maxWidth
-        val height = maxHeight
-
-        GlideImage(
-          model = mediaFolder.thumbnailUri,
-          imageSize = DpSize(width, height),
-          modifier = Modifier
-            .aspectRatio(1f)
-        )
-      }
-    }
-
-    Text(text = mediaFolder.title, modifier = Modifier.padding(top = 12.dp))
   }
 }
 
@@ -401,11 +342,10 @@ private fun MediaThumbnail(
 
 @AllDevicePreviews
 @Composable
-private fun MediaSelectScreenFolderPreview() {
+private fun MediaSelectScreenEmptyPreview() {
   Previews.Preview {
     MediaSelectScreen(
-      state = MediaSelectScreenState.Folders(
-        mediaFolders = rememberPreviewMediaFolders(20),
+      state = MediaSelectScreenState(
         selectedMedia = emptyList()
       ),
       onEvent = {}
@@ -416,15 +356,12 @@ private fun MediaSelectScreenFolderPreview() {
 @AllDevicePreviews
 @Composable
 private fun MediaSelectScreenMediaPreview() {
-  val folders = rememberPreviewMediaFolders(20)
-  val media = rememberPreviewMedia(100)
-  val selectedMedia: MutableList<Media> = remember { mutableStateListOf() }
+  val media = rememberPreviewMedia(3)
+  val selectedMedia: MutableList<Media> = remember(media) { mutableStateListOf<Media>().apply { addAll(media) } }
 
   Previews.Preview {
     MediaSelectScreen(
-      state = MediaSelectScreenState.Files(
-        selectedMediaFolder = folders.first(),
-        selectedMediaFolderItems = media,
+      state = MediaSelectScreenState(
         selectedMedia = selectedMedia
       ),
       onEvent = {
@@ -437,19 +374,6 @@ private fun MediaSelectScreenMediaPreview() {
         }
       }
     )
-  }
-}
-
-@DayNightPreviews
-@Composable
-private fun MediaFolderTilePreview() {
-  Previews.Preview {
-    Box(modifier = Modifier.width(174.dp)) {
-      MediaFolderTile(
-        mediaFolder = rememberPreviewMediaFolders(1).first(),
-        onEvent = {}
-      )
-    }
   }
 }
 
@@ -494,26 +418,8 @@ private fun NextButtonPreview() {
   }
 }
 
-@Composable
-private fun rememberPreviewMediaFolders(count: Int): List<MediaFolder> {
-  return remember(count) {
-    (0 until count).map { index ->
-      MediaFolder(
-        thumbnailUri = "https://example.com/folder$index.jpg".toUri(),
-        title = "Folder $index",
-        itemCount = (index + 1) * 10,
-        bucketId = "bucket_$index",
-        folderType = if (index == 0) MediaFolder.FolderType.CAMERA else MediaFolder.FolderType.NORMAL
-      )
-    }
-  }
-}
-
 private data class GridConfiguration(
   val gridCells: GridCells,
-  val horizontalMargin: Dp,
-  val horizontalSpacing: Dp,
-  val verticalSpacing: Dp,
   val bottomBarVerticalPadding: Dp,
   val bottomBarHorizontalPadding: Dp,
   val bottomBarAlignment: Alignment.Horizontal

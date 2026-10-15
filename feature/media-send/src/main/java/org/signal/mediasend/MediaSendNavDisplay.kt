@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavEntry
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import org.signal.core.ui.compose.AllDevicePreviews
 import org.signal.core.ui.compose.Previews
+import org.signal.core.ui.compose.Dialogs
 import org.signal.core.ui.compose.Snackbars
 import org.signal.core.ui.compose.showSnackbar
 import org.signal.mediasend.capture.MediaCaptureScreen
@@ -48,6 +50,7 @@ internal fun MediaSendNavDisplay(
   backStack: NavBackStack<NavKey>,
   eventHandler: MediaSendEventHandler,
   modifier: Modifier = Modifier,
+  isProcessingMedia: Boolean = false,
   textStoryEditorSlot: @Composable () -> Unit = {},
   sendSlot: @Composable (MediaSendState) -> Unit = {}
 ) {
@@ -68,34 +71,17 @@ internal fun MediaSendNavDisplay(
           )
         }
 
-        MediaSendNavKey.Select.Folders -> NavEntry(key) {
+        // Both saved navigation keys now open the same selected-media screen.
+        is MediaSendNavKey.Select -> NavEntry(key) {
           val state by stateFlow.collectAsStateWithLifecycle()
-          val screenState = remember(state.mediaFolders, state.selectedMedia) {
-            MediaSelectScreenState.Folders(
-              mediaFolders = state.mediaFolders,
-              selectedMedia = state.selectedMedia
-            )
+          val screenState = remember(state.selectedMedia) {
+            MediaSelectScreenState(state.selectedMedia)
           }
 
           MediaSelectScreen(
             state = screenState,
-            onEvent = eventHandler::onMediaSelectScreenEvent
-          )
-        }
-
-        is MediaSendNavKey.Select.Files -> NavEntry(key) {
-          val state by stateFlow.collectAsStateWithLifecycle()
-          val screenState = remember(state.selectedMedia, state.selectedMediaFolderItems) {
-            MediaSelectScreenState.Files(
-              selectedMediaFolder = key.folder,
-              selectedMediaFolderItems = state.selectedMediaFolderItems,
-              selectedMedia = state.selectedMedia
-            )
-          }
-
-          MediaSelectScreen(
-            state = screenState,
-            onEvent = eventHandler::onMediaSelectScreenEvent
+            onEvent = eventHandler::onMediaSelectScreenEvent,
+            maxSelection = state.maxSelection
           )
         }
 
@@ -117,6 +103,9 @@ internal fun MediaSendNavDisplay(
     }
 
     Snackbar(snackbarEvents)
+    if (isProcessingMedia) {
+      Dialogs.IndeterminateProgressDialog(stringResource(R.string.SystemMediaPicker__opening_media))
+    }
   }
 }
 

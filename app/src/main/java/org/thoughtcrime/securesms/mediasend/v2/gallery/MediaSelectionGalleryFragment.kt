@@ -1,5 +1,6 @@
 package org.thoughtcrime.securesms.mediasend.v2.gallery
 
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import androidx.activity.OnBackPressedCallback
@@ -114,6 +115,10 @@ class MediaSelectionGalleryFragment : Fragment(R.layout.fragment_container), Med
     sharedViewModel.addMedia(media)
   }
 
+  override fun onMediaSelected(media: Set<Media>, onComplete: (Set<Uri>) -> Unit) {
+    sharedViewModel.addMedia(media, onComplete)
+  }
+
   override fun onMediaUnselected(media: Set<Media>) {
     sharedViewModel.removeMedia(media)
   }
@@ -137,6 +142,7 @@ class MediaSelectionGalleryFragment : Fragment(R.layout.fragment_container), Med
   }
 
   fun onBackPressed() {
+    if (mediaGalleryFragment.isReading) return
     if (arguments?.containsKey("first") == true) {
       requireActivity().finish()
       return

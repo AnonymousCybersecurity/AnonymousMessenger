@@ -9,7 +9,6 @@ import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.flow.Flow
 import org.signal.core.models.media.Media
-import org.signal.core.models.media.MediaFolder
 import java.io.InputStream
 import kotlin.time.Duration
 
@@ -20,16 +19,6 @@ import kotlin.time.Duration
  * and constraint implementations while still supporting full functionality.
  */
 interface MediaSendRepository {
-
-  /**
-   * Retrieves the top-level folders which contain media
-   */
-  suspend fun getFolders(): List<MediaFolder>
-
-  /**
-   * Retrieves media for a given bucketId (folder)
-   */
-  suspend fun getMedia(bucketId: String): List<Media>
 
   /**
    * Validates and filters media against constraints.

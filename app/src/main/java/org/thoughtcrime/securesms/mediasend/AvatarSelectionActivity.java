@@ -40,6 +40,7 @@ public class AvatarSelectionActivity extends AppCompatActivity implements Camera
   private static final String IMAGE_CAPTURE = "IMAGE_CAPTURE";
   private static final String IMAGE_EDITOR  = "IMAGE_EDITOR";
   private static final String ARG_GALLERY   = "ARG_GALLERY";
+  private static final String CURRENT_MEDIA = "CURRENT_MEDIA";
 
   public static final String EXTRA_MEDIA = "avatar.media";
 
@@ -75,6 +76,9 @@ public class AvatarSelectionActivity extends AppCompatActivity implements Camera
   protected void onCreate(@Nullable Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     dynamicTheme.onCreate(this);
+    if (savedInstanceState != null) {
+      currentMedia = savedInstanceState.getParcelable(CURRENT_MEDIA);
+    }
 
     getWindow().addFlags(
         WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
@@ -82,11 +86,20 @@ public class AvatarSelectionActivity extends AppCompatActivity implements Camera
 
     setContentView(R.layout.avatar_selection_activity);
 
-    if (isGalleryFirst()) {
-      onGalleryClicked();
-    } else {
-      onNavigateToCamera();
+    // Keep the restored picker fragment and its pending result when the activity is recreated.
+    if (savedInstanceState == null) {
+      if (isGalleryFirst()) {
+        onGalleryClicked();
+      } else {
+        onNavigateToCamera();
+      }
     }
+  }
+
+  @Override
+  protected void onSaveInstanceState(@NonNull Bundle outState) {
+    outState.putParcelable(CURRENT_MEDIA, currentMedia);
+    super.onSaveInstanceState(outState);
   }
 
   @Override

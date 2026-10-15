@@ -27,10 +27,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.MultiplePermissionsState
 import com.google.accompanist.permissions.PermissionState
 import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.google.accompanist.permissions.rememberPermissionState
 import im.molly.unifiedpush.model.AnonymousSocket
 import org.signal.camera.CameraScreenEvents
@@ -40,7 +38,6 @@ import org.signal.core.ui.compose.Dialogs
 import org.signal.core.ui.compose.SignalIcons
 import org.signal.core.ui.compose.theme.SignalTheme
 import org.signal.core.ui.permissions.Permissions
-import org.signal.core.util.permissions.PermissionCompat
 import org.thoughtcrime.securesms.R
 import org.thoughtcrime.securesms.components.settings.app.usernamelinks.main.QrImageSelectionActivity
 import org.thoughtcrime.securesms.util.DynamicTheme
@@ -69,14 +66,6 @@ class AnonymousSocketQrScannerActivity : AppCompatActivity() {
     }
 
     setContent {
-      val galleryPermissionState: MultiplePermissionsState = rememberMultiplePermissionsState(permissions = PermissionCompat.forImages().toList()) { grants ->
-        if (grants.values.all { it }) {
-          galleryLauncher.launch(Unit)
-        } else {
-          Toast.makeText(this, R.string.ChatWallpaperPreviewActivity__viewing_your_gallery_requires_the_storage_permission, Toast.LENGTH_SHORT).show()
-        }
-      }
-
       val cameraPermissionState: PermissionState = rememberPermissionState(permission = Manifest.permission.CAMERA)
       val state by viewModel.state
 
@@ -94,19 +83,12 @@ class AnonymousSocketQrScannerActivity : AppCompatActivity() {
           state = state,
           cameraState = cameraState,
           cameraEmitter = cameraViewModel::onEvent,
-          galleryPermissionsState = galleryPermissionState,
           cameraPermissionState = cameraPermissionState,
           onQrResultHandled = {
             finish()
           },
           onOpenCameraClicked = { askCameraPermissions() },
-          onOpenGalleryClicked = {
-            if (galleryPermissionState.allPermissionsGranted) {
-              galleryLauncher.launch(Unit)
-            } else {
-              galleryPermissionState.launchMultiplePermissionRequest()
-            }
-          },
+          onOpenGalleryClicked = { galleryLauncher.launch(Unit) },
           onDataFound = { data ->
             setResult(RESULT_OK, Intent().setData(Uri.parse(data)))
             finish()
@@ -156,7 +138,6 @@ fun Content(
   state: AnonymousSocketQrScannerViewModel.ScannerState,
   cameraState: CameraScreenState,
   cameraEmitter: (CameraScreenEvents) -> Unit = {},
-  galleryPermissionsState: MultiplePermissionsState,
   cameraPermissionState: PermissionState,
   onQrResultHandled: () -> Unit,
   onOpenCameraClicked: () -> Unit,

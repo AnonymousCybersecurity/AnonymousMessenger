@@ -1,328 +1,208 @@
 package org.thoughtcrime.securesms.mediasend.v2.gallery
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
-import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import androidx.fragment.app.Fragment
-import androidx.fragment.app.viewModels
+import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.map
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.RecyclerView
+import kotlinx.coroutines.launch
 import org.signal.core.models.media.Media
-import org.signal.core.ui.permissions.Permissions
-import org.signal.core.ui.util.StorageUtil
-import org.signal.core.util.Stopwatch
-import org.signal.core.util.permissions.PermissionCompat
+import org.signal.core.util.concurrent.SignalExecutors
+import org.signal.mediasend.MediaSendDependencies
+import org.signal.mediasend.select.SystemMediaPicker
+import org.signal.mediasend.select.SystemMediaPickerContract
 import org.thoughtcrime.securesms.R
 import org.thoughtcrime.securesms.components.recyclerview.GridDividerDecoration
-import org.thoughtcrime.securesms.conversation.ManageContextMenu
 import org.thoughtcrime.securesms.databinding.V2MediaGalleryFragmentBinding
-import org.thoughtcrime.securesms.mediasend.MediaRepository
-import org.thoughtcrime.securesms.mediasend.v2.review.MediaGalleryGridItemTouchListener
-import org.thoughtcrime.securesms.util.Material3OnScrollHelper
+import org.thoughtcrime.securesms.util.RemoteConfig
 import org.thoughtcrime.securesms.util.SystemWindowInsetsSetter
 import org.thoughtcrime.securesms.util.ViewUtil
 import org.thoughtcrime.securesms.util.adapter.mapping.MappingAdapter
 import org.thoughtcrime.securesms.util.fragments.requireListener
-import org.thoughtcrime.securesms.util.livedata.LiveDataUtil
 import org.thoughtcrime.securesms.util.visible
 import org.signal.core.ui.R as CoreUiR
+import org.signal.mediasend.R as MediaSendR
 
 /**
- * Displays a collection of files and folders to the user to allow them to select
- * media to send.
+ * Selects media through Android's picker and displays only the user's selected files.
  */
 class MediaGalleryFragment : Fragment(R.layout.v2_media_gallery_fragment) {
 
-  private val viewModel: MediaGalleryViewModel by viewModels(
-    factoryProducer = { MediaGalleryViewModel.Factory(null, null, MediaGalleryRepository(requireContext(), MediaRepository())) }
-  )
-
+  private val viewModel: MediaPickerViewModel by activityViewModels()
+  val isReading: Boolean get() = viewModel.isReading.value == true
   private lateinit var callbacks: Callbacks
-
   private var selectedMediaTouchHelper: ItemTouchHelper? = null
-  private var shouldEnableScrolling: Boolean = true
-
-  private val galleryAdapter = MappingAdapter()
+  private var hasLaunchedPicker = false
   private val selectedAdapter = MappingAdapter()
-  private val mediaGalleryGridItemTouchListener = MediaGalleryGridItemTouchListener()
+  private val galleryAdapter = MappingAdapter()
+  private val viewStateLiveData = MutableLiveData<ViewState>()
 
-  private lateinit var viewStateLiveData: MutableLiveData<ViewState>
+  private val singlePicker = registerForActivityResult(SystemMediaPickerContract(1)) { uris ->
+    onPickerResult(uris)
+  }
 
-  private val onBackPressedCallback: OnBackPressedCallback = object : OnBackPressedCallback(false) {
-    override fun handleOnBackPressed() {
-      onBack()
-    }
+  private val multiplePicker = registerForActivityResult(SystemMediaPickerContract(RemoteConfig.maxAttachmentCount.coerceAtLeast(2))) { uris ->
+    onPickerResult(uris)
+  }
+
+  override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    hasLaunchedPicker = savedInstanceState?.getBoolean(KEY_PICKER_LAUNCHED) ?: false
   }
 
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-    viewStateLiveData = MutableLiveData(ViewState(chatColor = ContextCompat.getColor(requireContext(), CoreUiR.color.signal_light_colorPrimary)))
     callbacks = requireListener()
+    if (viewStateLiveData.value == null) {
+      viewStateLiveData.value = ViewState(chatColor = ContextCompat.getColor(requireContext(), CoreUiR.color.signal_light_colorPrimary))
+    }
     val binding = V2MediaGalleryFragmentBinding.bind(view)
-
     SystemWindowInsetsSetter.attach(view, viewLifecycleOwner, WindowInsetsCompat.Type.navigationBars())
-
     binding.mediaGalleryToolbar.updateLayoutParams<ConstraintLayout.LayoutParams> {
       topMargin = ViewUtil.getStatusBarHeight(view)
     }
-
     binding.mediaGalleryStatusBarBackground.updateLayoutParams {
       height = ViewUtil.getStatusBarHeight(view)
     }
-
-    binding.mediaGalleryGrid.layoutManager = object : GridLayoutManager(requireContext(), 4) {
-      override fun canScrollVertically() = shouldEnableScrolling
-    }
-
-    (binding.mediaGalleryGrid.layoutManager as GridLayoutManager).spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
-      override fun getSpanSize(position: Int): Int {
-        val isFolder: Boolean = (binding.mediaGalleryGrid.adapter as MappingAdapter).getModel(position).map { it is MediaGallerySelectableItem.FolderModel }.orElse(false)
-
-        return if (isFolder) 2 else 1
+    binding.mediaGalleryToolbar.setNavigationOnClickListener { onBack() }
+    binding.mediaGalleryToolbar.menu.findItem(R.id.action_camera).isVisible = callbacks.isCameraEnabled()
+    binding.mediaGalleryToolbar.setOnMenuItemClickListener { item ->
+      if (item.itemId == R.id.action_camera) {
+        if (!isReading) callbacks.onNavigateToCamera()
+        true
+      } else {
+        false
       }
     }
 
-    binding.mediaGalleryToolbar.setNavigationOnClickListener {
-      onBack()
-    }
-
-    Material3OnScrollHelper(
-      activity = requireActivity(),
-      views = listOf(binding.mediaGalleryToolbar, binding.mediaGalleryStatusBarBackground),
-      lifecycleOwner = viewLifecycleOwner
-    ).attach(binding.mediaGalleryGrid)
-
-    if (callbacks.isCameraEnabled()) {
-      binding.mediaGalleryToolbar.setOnMenuItemClickListener { item ->
-        if (item.itemId == R.id.action_camera) {
-          callbacks.onNavigateToCamera()
-          true
-        } else {
-          false
-        }
-      }
-    } else {
-      binding.mediaGalleryToolbar.menu.findItem(R.id.action_camera).isVisible = false
-    }
-
-    binding.mediaGalleryCountButton.setOnClickListener {
-      callbacks.onSubmit()
-    }
-
-    MediaGallerySelectedItem.register(selectedAdapter) { media ->
-      callbacks.onSelectedMediaClicked(media)
-    }
-    binding.mediaGallerySelected.adapter = selectedAdapter
-    selectedMediaTouchHelper?.attachToRecyclerView(binding.mediaGallerySelected)
-
-    val onDragSelectListener = object : MediaGalleryGridItemTouchListener.OnDragSelectListener {
-      override fun onSelectionStarted(start: Int) {
-        galleryAdapter.getModel(start).ifPresent {
-          val fileModel = it as MediaGallerySelectableItem.FileModel
-          val media = fileModel.media
-          if (fileModel.isSelected) {
-            callbacks.onMediaUnselected(media)
-            mediaGalleryGridItemTouchListener.setIsActive(false)
-          } else {
-            callbacks.onMediaSelected(media)
-          }
-        }
-      }
-
-      override fun onSelectChange(start: Int, end: Int, shouldSelect: Boolean) {
-        val mediaSet = (start..end)
-          .mapNotNull { i ->
-            galleryAdapter.getModel(i).orElse(null) as? MediaGallerySelectableItem.FileModel
-          }
-          .map { fileModel ->
-            fileModel.media
-          }
-          .toSet()
-
-        if (mediaSet.isNotEmpty()) {
-          if (shouldSelect) {
-            callbacks.onMediaSelected(mediaSet)
-          } else {
-            callbacks.onMediaUnselected(mediaSet)
-          }
-        }
-      }
-    }
-    mediaGalleryGridItemTouchListener.withSelectListener(onDragSelectListener)
-
+    binding.mediaGalleryManageButton.setOnClickListener { launchPicker() }
+    binding.mediaGalleryAllowAccess.setOnClickListener { launchPicker() }
+    binding.mediaGalleryCountButton.setOnClickListener { if (!isReading) callbacks.onSubmit() }
+    binding.mediaGalleryGrid.layoutManager = GridLayoutManager(requireContext(), 4)
+    binding.mediaGalleryGrid.addItemDecoration(GridDividerDecoration(4, ViewUtil.dpToPx(2)))
     MediaGallerySelectableItem.registerAdapter(
       mappingAdapter = galleryAdapter,
-      mediaGalleryGridItemTouchListener = mediaGalleryGridItemTouchListener,
-      onMediaFolderClicked = {
-        onBackPressedCallback.isEnabled = true
-        viewModel.setMediaFolder(it)
-      },
-      onMediaClicked = { media, selected ->
-        if (selected) {
-          callbacks.onMediaUnselected(media)
-        } else {
-          callbacks.onMediaSelected(media)
-        }
-      },
+      onMediaClicked = { media, _ -> if (!isReading) callbacks.onMediaUnselected(media) },
       callbacks.isMultiselectEnabled()
     )
-
     binding.mediaGalleryGrid.adapter = galleryAdapter
-    binding.mediaGalleryGrid.addItemDecoration(GridDividerDecoration(4, ViewUtil.dpToPx(2)))
-    binding.mediaGalleryGrid.addOnItemTouchListener(mediaGalleryGridItemTouchListener)
+    MediaGallerySelectedItem.register(selectedAdapter) { if (!isReading) callbacks.onSelectedMediaClicked(it) }
+    binding.mediaGallerySelected.adapter = selectedAdapter
+    selectedMediaTouchHelper?.attachToRecyclerView(binding.mediaGallerySelected)
 
     viewStateLiveData.observe(viewLifecycleOwner) { state ->
       binding.mediaGalleryBottomBarGroup.visible = state.selectedMedia.isNotEmpty()
       binding.mediaGalleryCountButton.setCount(state.selectedMedia.size)
-      state.chatColor?.let { binding.mediaGalleryCountButton.setChatColor(it) }
+      binding.mediaGalleryCountButton.setChatColor(state.chatColor)
+      binding.mediaGalleryManageContainer.visible = state.selectedMedia.isNotEmpty()
+      binding.mediaGalleryMissingPermissions.visible = state.selectedMedia.isEmpty()
+      galleryAdapter.submitList(state.selectedMedia.mapIndexed { index, media ->
+        MediaGallerySelectableItem.FileModel(media, true, index + 1, state.chatColor)
+      })
+      selectedAdapter.submitList(state.selectedMedia.map { MediaGallerySelectedItem.Model(it) })
+    }
 
-      val stopwatch = Stopwatch("mediaSubmit")
-      selectedAdapter.submitList(state.selectedMedia.map { MediaGallerySelectedItem.Model(it) }) {
-        stopwatch.split("after-submit")
-        stopwatch.stop("MediaGalleryFragment")
-        if (state.selectedMedia.isNotEmpty()) {
-          binding.mediaGallerySelected.smoothScrollToPosition(state.selectedMedia.size - 1)
+    val busyBackCallback = object : OnBackPressedCallback(false) {
+      override fun handleOnBackPressed() = Unit
+    }
+    requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, busyBackCallback)
+    viewModel.isReading.observe(viewLifecycleOwner) { isReading ->
+      binding.mediaGalleryManageButton.isEnabled = !isReading
+      binding.mediaGalleryAllowAccess.isEnabled = !isReading
+      binding.mediaGalleryCountButton.isEnabled = !isReading
+      binding.mediaGalleryLoading.visible = isReading
+      busyBackCallback.isEnabled = isReading
+    }
+    viewModel.result.observe(viewLifecycleOwner) { result ->
+      if (result != null) {
+        viewModel.result.value = null
+        if (result.hasUnreadableMedia) {
+          Toast.makeText(requireContext(), MediaSendR.string.SystemMediaPicker__unable_to_read_media, Toast.LENGTH_LONG).show()
         }
-      }
-    }
-
-    viewModel.state.observe(viewLifecycleOwner) { state ->
-      binding.mediaGalleryToolbar.title = state.bucketTitle ?: requireContext().getString(R.string.AttachmentKeyboard_gallery)
-    }
-
-    val galleryItemsWithSelection = LiveDataUtil.combineLatest(
-      viewModel.state.map { it.items },
-      viewStateLiveData.map { it.selectedMedia },
-      viewStateLiveData.map { it.chatColor }
-    ) { galleryItems, selectedMedia, chatColor ->
-      galleryItems.map {
-        if (it is MediaGallerySelectableItem.FileModel) {
-          val selectedIndex = selectedMedia.indexOfFirst { selected -> selected.uri == it.media.uri }
-          it.copy(
-            isSelected = selectedIndex >= 0,
-            selectionOneBasedIndex = selectedIndex + 1,
-            chatColor = chatColor
-          )
+        if (callbacks.isMultiselectEnabled()) {
+          val selectedUris = viewStateLiveData.value?.selectedMedia?.map { it.uri }.orEmpty().toSet()
+          val newMedia = result.media.filterNot { it.uri in selectedUris }.toSet()
+          if (newMedia.isNotEmpty()) {
+            // Keep review navigation blocked until the parent's validation has finished.
+            callbacks.onMediaSelected(newMedia) { retainedUris -> viewModel.completeReading(retainedUris) }
+          } else {
+            viewModel.completeReading(selectedUris)
+          }
         } else {
-          it
+          result.media.firstOrNull()?.let { callbacks.onMediaSelected(it) }
+          viewModel.completeReading()
         }
       }
     }
 
-    galleryItemsWithSelection.observe(viewLifecycleOwner) {
-      if (StorageUtil.canOnlyReadSelectedMediaStore() && it.isEmpty()) {
-        binding.mediaGalleryMissingPermissions.visible = true
-        binding.mediaGalleryManageContainer.visible = false
-        binding.mediaGalleryPermissionText.text = getString(R.string.MediaGalleryFragment__no_photos_found)
-        binding.mediaGalleryAllowAccess.text = getString(R.string.AttachmentKeyboard_manage)
-        binding.mediaGalleryAllowAccess.setOnClickListener { v -> showManageContextMenu(v, v.parent as ViewGroup, false, true) }
-        shouldEnableScrolling = false
-        galleryAdapter.submitList((1..100).map { MediaGallerySelectableItem.PlaceholderModel() })
-      } else if (StorageUtil.canOnlyReadSelectedMediaStore()) {
-        binding.mediaGalleryMissingPermissions.visible = false
-        binding.mediaGalleryManageContainer.visible = true
-        binding.mediaGalleryManageButton.setOnClickListener { v -> showManageContextMenu(v, v.rootView as ViewGroup, false, false) }
-        shouldEnableScrolling = true
-        galleryAdapter.submitList(it)
-      } else if (StorageUtil.canReadAnyFromMediaStore()) {
-        binding.mediaGalleryMissingPermissions.visible = false
-        binding.mediaGalleryManageContainer.visible = false
-        shouldEnableScrolling = true
-        galleryAdapter.submitList(it)
+    if (!hasLaunchedPicker) {
+      view.post {
+        if (isAdded && this.view === view) {
+          hasLaunchedPicker = true
+          launchPicker()
+        }
+      }
+    }
+  }
+
+  override fun onSaveInstanceState(outState: Bundle) {
+    outState.putBoolean(KEY_PICKER_LAUNCHED, hasLaunchedPicker)
+    super.onSaveInstanceState(outState)
+  }
+
+  private fun launchPicker() {
+    if (viewModel.isReading.value == true) return
+    try {
+      if (callbacks.isMultiselectEnabled()) {
+        multiplePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
       } else {
-        binding.mediaGalleryMissingPermissions.visible = true
-        binding.mediaGalleryManageContainer.visible = false
-        binding.mediaGalleryPermissionText.text = getString(R.string.AttachmentKeyboard_Signal_needs_permission_to_show_your_photos_and_videos)
-        binding.mediaGalleryAllowAccess.text = getString(R.string.AttachmentKeyboard_allow_access)
-        binding.mediaGalleryAllowAccess.setOnClickListener { requestRequiredPermissions() }
-        shouldEnableScrolling = false
-        galleryAdapter.submitList((1..100).map { MediaGallerySelectableItem.PlaceholderModel() })
+        singlePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
       }
+    } catch (e: ActivityNotFoundException) {
+      Toast.makeText(requireContext(), R.string.AttachmentManager_cant_open_media_selection, Toast.LENGTH_LONG).show()
     }
-
-    requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, onBackPressedCallback)
   }
 
-  override fun onResume() {
-    super.onResume()
-    refreshMediaGallery()
-  }
-
-  private fun refreshMediaGallery() {
-    viewModel.refreshMediaGallery()
-  }
-
-  @Deprecated("Deprecated in Java")
-  override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String?>, grantResults: IntArray) {
-    Permissions.onRequestPermissionsResult(this, requestCode, permissions, grantResults)
-  }
-
-  private fun showManageContextMenu(view: View, rootView: ViewGroup, showAbove: Boolean, showAtStart: Boolean) {
-    ManageContextMenu.show(
-      context = requireContext(),
-      anchorView = view,
-      rootView = rootView,
-      showAbove = showAbove,
-      showAtStart = showAtStart,
-      onSelectMore = { selectMorePhotos() },
-      onSettings = { requireContext().startActivity(Permissions.getApplicationSettingsIntent(requireContext())) }
-    )
-  }
-
-  private fun selectMorePhotos() {
-    Permissions.with(this)
-      .request(*PermissionCompat.forImagesAndVideos())
-      .onAnyResult { refreshMediaGallery() }
-      .execute()
-  }
-
-  private fun requestRequiredPermissions() {
-    Permissions.with(this)
-      .request(*PermissionCompat.forImagesAndVideos())
-      .ifNecessary()
-      .onAnyResult { refreshMediaGallery() }
-      .withPermanentDenialDialog(
-        getString(R.string.AttachmentManager_signal_requires_the_external_storage_permission_in_order_to_attach_photos_videos_or_audio),
-        null,
-        R.string.AttachmentManager_signal_allow_storage,
-        R.string.AttachmentManager_signal_to_show_photos,
-        true,
-        parentFragmentManager
-      )
-      .onSomeDenied {
-        val deniedPermission = PermissionCompat.getRequiredPermissionsForDenial()
-        if (it.containsAll(deniedPermission.toList())) {
-          Toast.makeText(requireContext(), R.string.AttachmentManager_signal_needs_storage_access, Toast.LENGTH_LONG).show()
-        }
-      }
-      .execute()
+  private fun onPickerResult(uris: List<Uri>) {
+    if (uris.isEmpty()) {
+      if (viewStateLiveData.value?.selectedMedia.isNullOrEmpty()) onBack()
+    } else {
+      val selectedUris = viewStateLiveData.value?.selectedMedia?.map { it.uri }.orEmpty()
+      val newUris = if (callbacks.isMultiselectEnabled()) uris.filterNot { it in selectedUris } else uris
+      if (newUris.isNotEmpty()) viewModel.readMedia(requireContext(), newUris)
+    }
   }
 
   fun onBack() {
-    if (viewModel.pop()) {
-      onBackPressedCallback.isEnabled = false
-      callbacks.onToolbarNavigationClicked()
-    }
+    if (!isReading) callbacks.onToolbarNavigationClicked()
   }
 
   fun onViewStateUpdated(state: ViewState) {
+    if (!isReading) viewModel.retainOnly(state.selectedMedia.map { it.uri })
     viewStateLiveData.value = state
   }
 
-  fun onMediaErrorOccurred() {
-    mediaGalleryGridItemTouchListener.stopAutoScroll()
-    mediaGalleryGridItemTouchListener.setIsActive(false)
-  }
+  fun onMediaErrorOccurred() = Unit
 
   fun bindSelectedMediaItemDragHelper(helper: ItemTouchHelper) {
     selectedMediaTouchHelper = helper
+    view?.findViewById<RecyclerView>(R.id.media_gallery_selected)?.let { helper.attachToRecyclerView(it) }
   }
 
   data class ViewState(
@@ -335,11 +215,78 @@ class MediaGalleryFragment : Fragment(R.layout.v2_media_gallery_fragment) {
     fun isMultiselectEnabled(): Boolean = false
     fun onMediaSelected(media: Media)
     fun onMediaSelected(media: Set<Media>) = Unit
+    fun onMediaSelected(media: Set<Media>, onComplete: (Set<Uri>) -> Unit) {
+      onMediaSelected(media)
+      onComplete(media.map { it.uri }.toSet())
+    }
     fun onMediaUnselected(media: Set<Media>) = Unit
     fun onMediaUnselected(media: Media): Unit = throw UnsupportedOperationException()
     fun onSelectedMediaClicked(media: Media): Unit = throw UnsupportedOperationException()
     fun onNavigateToCamera(): Unit = throw UnsupportedOperationException()
     fun onSubmit(): Unit = throw UnsupportedOperationException()
     fun onToolbarNavigationClicked(): Unit = throw UnsupportedOperationException()
+  }
+
+  companion object {
+    private const val KEY_PICKER_LAUNCHED = "system_picker_launched"
+  }
+}
+
+/** Keeps a pending picker result across rotation while its metadata is being loaded. */
+class MediaPickerViewModel(private val savedStateHandle: SavedStateHandle) : ViewModel() {
+  val isReading = MutableLiveData(false)
+  val result = MutableLiveData<Result?>()
+  private var cleared = false
+
+  init {
+    SystemMediaPicker.retainPermissions(MediaSendDependencies.application, this, pickedUris())
+    savedStateHandle.get<ArrayList<Uri>>(KEY_PENDING_URIS)?.let { readMedia(MediaSendDependencies.application, it) }
+  }
+
+  private fun pickedUris(): List<Uri> = savedStateHandle.get<ArrayList<Uri>>(KEY_PICKED_URIS).orEmpty()
+
+  fun readMedia(context: Context, uris: List<Uri>) {
+    if (isReading.value == true) return
+    val applicationContext = context.applicationContext
+    savedStateHandle[KEY_PICKED_URIS] = ArrayList((pickedUris() + uris).distinct())
+    savedStateHandle[KEY_PENDING_URIS] = ArrayList(uris)
+    isReading.value = true
+    viewModelScope.launch {
+      var delivered = false
+      try {
+        val media = SystemMediaPicker.readMedia(applicationContext, uris, this@MediaPickerViewModel)
+        val unreadableUris = uris.toSet() - media.map { it.uri }.toSet()
+        savedStateHandle[KEY_PICKED_URIS] = ArrayList(pickedUris().filterNot { it in unreadableUris })
+        delivered = true
+        result.value = Result(media, media.size != uris.distinct().size)
+      } finally {
+        if (!delivered) completeReading()
+        if (cleared) SystemMediaPicker.releaseUnusedPermissions(applicationContext, this@MediaPickerViewModel)
+      }
+    }
+  }
+
+  fun retainOnly(uris: Collection<Uri>) {
+    val retained = pickedUris().filter { it in uris }
+    savedStateHandle[KEY_PICKED_URIS] = ArrayList(retained)
+    SystemMediaPicker.releaseUnusedPermissions(MediaSendDependencies.application, this, retained)
+  }
+
+  fun completeReading(retainedUris: Collection<Uri>? = null) {
+    if (retainedUris != null) retainOnly(retainedUris)
+    savedStateHandle.remove<ArrayList<Uri>>(KEY_PENDING_URIS)
+    isReading.value = false
+  }
+
+  override fun onCleared() {
+    cleared = true
+    SignalExecutors.BOUNDED_IO.execute { SystemMediaPicker.releaseUnusedPermissions(MediaSendDependencies.application, this) }
+  }
+
+  data class Result(val media: List<Media>, val hasUnreadableMedia: Boolean)
+
+  companion object {
+    private const val KEY_PICKED_URIS = "system_picker_uris"
+    private const val KEY_PENDING_URIS = "system_picker_pending_uris"
   }
 }

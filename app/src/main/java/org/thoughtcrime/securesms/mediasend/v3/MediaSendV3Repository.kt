@@ -13,10 +13,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.rx3.asFlow
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.signal.core.models.media.Media
-import org.signal.core.models.media.MediaFolder
 import org.signal.core.util.asListContains
 import org.signal.core.util.logging.Log
 import org.signal.mediasend.EditorState
@@ -48,7 +46,6 @@ import org.thoughtcrime.securesms.util.MediaUtil
 import org.thoughtcrime.securesms.util.RemoteConfig
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -61,25 +58,12 @@ object MediaSendV3Repository : MediaSendRepository {
   private val TAG = Log.tag(MediaSendV3Repository::class.java)
   private val appContext = AppDependencies.application
   private val legacyRepository = MediaSelectionRepository(appContext)
-  private val mediaRepository = MediaRepository()
 
   override var isCameraFacingFront: Boolean
     get() = SignalStore.misc.isCameraFacingFront
     set(value) {
       SignalStore.misc.isCameraFacingFront = value
     }
-
-  override suspend fun getFolders(): List<MediaFolder> = suspendCancellableCoroutine { continuation ->
-    mediaRepository.getFolders(appContext) { folders ->
-      continuation.resume(folders)
-    }
-  }
-
-  override suspend fun getMedia(bucketId: String): List<Media> = suspendCancellableCoroutine { continuation ->
-    mediaRepository.getMediaInBucket(appContext, bucketId) { media ->
-      continuation.resume(media)
-    }
-  }
 
   override suspend fun validateAndFilterMedia(
     media: List<Media>,

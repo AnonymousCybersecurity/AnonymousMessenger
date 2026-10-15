@@ -44,7 +44,7 @@ class QrImageSelectionActivity : AppCompatActivity(), MediaGalleryFragment.Callb
   }
 
   override fun onMediaSelected(media: Media) {
-    setResult(RESULT_OK, Intent().setData(media.uri))
+    setResult(RESULT_OK, Intent().setData(media.uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
     finish()
   }
 

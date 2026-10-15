@@ -22,7 +22,9 @@ import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -37,13 +39,16 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.signal.core.models.media.Media
-import org.signal.core.models.media.MediaFolder
 import org.signal.core.ui.compose.DialogController
 import org.signal.core.ui.compose.DialogResult
 import org.signal.core.util.ContentTypeUtil
 import org.signal.core.util.StringUtil
+import org.signal.core.util.concurrent.SignalExecutors
+import org.signal.core.util.logging.Log
 import org.signal.imageeditor.core.model.EditorElement
 import org.signal.imageeditor.core.model.EditorModel
 import org.signal.imageeditor.core.renderers.UriGlideRenderer
@@ -53,6 +58,7 @@ import org.signal.mediasend.edit.MediaEditScreenEvent
 import org.signal.mediasend.edit.video.VideoTrimData
 import org.signal.mediasend.preupload.PreUploadController
 import org.signal.mediasend.select.MediaSelectScreenEvent
+import org.signal.mediasend.select.SystemMediaPicker
 import org.thoughtcrime.securesms.video.videoconverter.utils.VideoConstants
 import java.io.FileInputStream
 import java.io.IOException
@@ -133,6 +139,11 @@ class MediaSendViewModel(
 
   /** Tracks drag state for media reordering. */
   private var lastMediaDrag: Pair<Int, Int> = Pair(0, 0)
+  private val selectionMutex = Mutex()
+  private val processingMedia = MutableStateFlow(false)
+  val isProcessingMedia: StateFlow<Boolean> = processingMedia.asStateFlow()
+  private var pickerJob: Job? = null
+  private var cleared = false
 
   init {
     // Matches legacy behavior: VM subscribes to connectivity updates and derives
@@ -191,7 +202,8 @@ class MediaSendViewModel(
       addMedia(args.initialMedia.toSet())
     }
 
-    refreshMediaFolders()
+    SystemMediaPicker.retainPermissions(MediaSendDependencies.application, this, pickedUris())
+    savedStateHandle.get<ArrayList<Uri>>(KEY_PENDING_PICKER_URIS)?.let(::readPickedMedia)
   }
 
   /** Updates state atomically — automatically persisted via SavedStateHandle-backed MutableStateFlow. */
@@ -201,29 +213,56 @@ class MediaSendViewModel(
 
   //region Media Selection
 
-  fun refreshMediaFolders() {
-    viewModelScope.launch {
-      val folders = repository.getFolders()
-      internalState.update {
-        it.copy(
-          mediaFolders = folders,
-          selectedMediaFolder = if (it.selectedMediaFolder in folders) it.selectedMediaFolder else null,
-          selectedMediaFolderItems = if (it.selectedMediaFolder in folders) it.selectedMediaFolderItems else emptyList()
-        )
-      }
-    }
-  }
-
   override fun onMediaSelectScreenEvent(mediaSelectScreenEvent: MediaSelectScreenEvent) {
+    if (processingMedia.value) return
     when (mediaSelectScreenEvent) {
-      is MediaSelectScreenEvent.FolderClick -> onFolderClick(mediaSelectScreenEvent.mediaFolder)
+      is MediaSelectScreenEvent.MediaPicked -> readPickedMedia(mediaSelectScreenEvent.uris)
       is MediaSelectScreenEvent.MediaClick -> onMediaClick(mediaSelectScreenEvent.media)
       is MediaSelectScreenEvent.SetFocusedMedia -> setFocusedMedia(mediaSelectScreenEvent.media)
       MediaSelectScreenEvent.NavigateToEdit -> backStack.goToEdit()
     }
   }
 
+  private fun pickedUris(): List<Uri> = savedStateHandle.get<ArrayList<Uri>>(KEY_PICKED_URIS).orEmpty()
+
+  private fun releaseUnusedPickerPermissions() {
+    val retained = pickedUris().filter { uri -> state.value.selectedMedia.any { it.uri == uri } }
+    savedStateHandle[KEY_PICKED_URIS] = ArrayList(retained)
+    SystemMediaPicker.releaseUnusedPermissions(MediaSendDependencies.application, this, retained)
+  }
+
+  private fun readPickedMedia(uris: List<Uri>) {
+    if (processingMedia.value) return
+    val selectedUris = state.value.selectedMedia.map { it.uri }.toSet()
+    val newUris = uris.distinct().filterNot { it in selectedUris }
+    if (newUris.isEmpty()) {
+      savedStateHandle.remove<ArrayList<Uri>>(KEY_PENDING_PICKER_URIS)
+      return
+    }
+    savedStateHandle[KEY_PICKED_URIS] = ArrayList((pickedUris() + newUris).distinct())
+    savedStateHandle[KEY_PENDING_PICKER_URIS] = ArrayList(newUris)
+    // Keep navigation blocked through metadata loading and the existing validation pipeline.
+    processingMedia.value = true
+    pickerJob = viewModelScope.launch {
+      try {
+        val media = SystemMediaPicker.readMedia(MediaSendDependencies.application, newUris, this@MediaSendViewModel)
+        if (media.size != newUris.size) {
+          internalSnackbarEvents.trySend(SnackbarEvent(message = R.string.SystemMediaPicker__unable_to_read_media))
+        }
+        val selectedUris = state.value.selectedMedia.map { it.uri }.toSet()
+        val newMedia = media.filterNot { it.uri in selectedUris }.toSet()
+        if (newMedia.isNotEmpty()) addMedia(newMedia, focusNewlyAdded = false).join()
+        savedStateHandle.remove<ArrayList<Uri>>(KEY_PENDING_PICKER_URIS)
+      } finally {
+        releaseUnusedPickerPermissions()
+        processingMedia.value = false
+        if (cleared) SystemMediaPicker.releaseUnusedPermissions(MediaSendDependencies.application, this@MediaSendViewModel)
+      }
+    }
+  }
+
   override fun onMediaCaptureScreenEvent(mediaCaptureScreenEvent: MediaCaptureScreenEvent) {
+    if (processingMedia.value) return
     when (mediaCaptureScreenEvent) {
       MediaCaptureScreenEvent.ShowCamera -> backStack.goToCamera()
       MediaCaptureScreenEvent.ShowTextStory -> backStack.goToTextStory()
@@ -245,6 +284,7 @@ class MediaSendViewModel(
   }
 
   override fun onMediaEditScreenEvent(mediaEditScreenEvent: MediaEditScreenEvent) {
+    if (processingMedia.value) return
     when (mediaEditScreenEvent) {
       is MediaEditScreenEvent.FocusedMediaChanged -> setFocusedMedia(mediaEditScreenEvent.media)
       MediaEditScreenEvent.NavigateToSend -> backStack.goToSend()
@@ -349,21 +389,6 @@ class MediaSendViewModel(
     backStack.goToEdit()
   }
 
-  private fun onFolderClick(mediaFolder: MediaFolder?) {
-    if (mediaFolder != null) {
-      backStack.goToFiles(mediaFolder)
-    }
-
-    viewModelScope.launch {
-      if (mediaFolder != null) {
-        val media = repository.getMedia(mediaFolder.bucketId)
-        internalState.update { it.copy(selectedMediaFolder = mediaFolder, selectedMediaFolderItems = media) }
-      } else {
-        internalState.update { it.copy(selectedMediaFolder = null, selectedMediaFolderItems = emptyList()) }
-      }
-    }
-  }
-
   private fun onMediaClick(media: Media) {
     if (media.uri in internalState.value.selectedMedia.map { it.uri }) {
       removeMedia(media)
@@ -395,85 +420,94 @@ class MediaSendViewModel(
    * Focus is updated within the same atomic state write that adds the media, so [MediaSendState.focusedMedia]
    * is never left pointing at an item that is not yet present in [MediaSendState.selectedMedia].
    */
-  private fun addMedia(media: Set<Media>, focusNewlyAdded: Boolean) {
-    viewModelScope.launch {
-      val snapshot = state.value
-      val newSelectionList: List<Media> = linkedSetOf<Media>().apply {
-        addAll(snapshot.selectedMedia)
-        addAll(media)
-      }.toList()
+  private fun addMedia(media: Set<Media>, focusNewlyAdded: Boolean): Job {
+    return viewModelScope.launch {
+      selectionMutex.withLock {
+        val snapshot = state.value
+        val newSelectionList: List<Media> = linkedSetOf<Media>().apply {
+          addAll(snapshot.selectedMedia)
+          addAll(media)
+        }.toList()
 
-      // Validate and filter through repository
-      val filterResult = repository.validateAndFilterMedia(
-        media = newSelectionList,
-        maxSelection = snapshot.maxSelection,
-        isStory = snapshot.isStory
-      )
-
-      if (filterResult.filteredMedia.isNotEmpty()) {
-        // Initialize video trim states for new videos
-        val maxVideoDurationUs = getMaxVideoDurationUs()
-        val initializedVideoEditorStates = filterResult.filteredMedia
-          .filterNot { snapshot.editorStateMap.containsKey(it.uri) }
-          .filter { isNonGifVideo(it) }
-          .associate { video ->
-            val durationUs = video.duration.milliseconds.inWholeMicroseconds
-            video.uri to EditorState.VideoTrim.forVideo(durationUs, maxVideoDurationUs)
-          }
-
-        val initializedImageEditorStates = filterResult.filteredMedia
-          .filterNot { snapshot.editorStateMap.containsKey(it.uri) }
-          .filter { ContentTypeUtil.isImageType(it.contentType) }
-          .associate { image ->
-            // TODO - this should likely be in a repository?
-            val editorModel = EditorModel.create(0x0)
-            val element = EditorElement(
-              UriGlideRenderer(
-                image.uri,
-                true,
-                0,
-                0,
-                UriGlideRenderer.STRONG_BLUR,
-                object : RequestListener<Bitmap> {
-                  override fun onResourceReady(resource: Bitmap?, model: Any?, target: Target<Bitmap?>?, dataSource: DataSource?, isFirstResource: Boolean): Boolean {
-                    return false
-                  }
-
-                  override fun onLoadFailed(e: GlideException?, model: Any?, target: Target<Bitmap?>?, isFirstResource: Boolean): Boolean {
-                    return false
-                  }
-                }
-              )
-            )
-            element.flags.setSelectable(false).persist()
-            editorModel.addElement(element)
-            image.uri to EditorState.Image(editorModel)
-          }
-
-        updateState {
-          val newFocus = if (focusNewlyAdded) {
-            filterResult.filteredMedia.lastOrNull { it in media } ?: focusedMedia ?: filterResult.filteredMedia.firstOrNull()
-          } else {
-            focusedMedia ?: filterResult.filteredMedia.firstOrNull()
-          }
-
-          copy(
-            selectedMedia = filterResult.filteredMedia,
-            focusedMedia = newFocus,
-            editorStateMap = editorStateMap + initializedVideoEditorStates + initializedImageEditorStates
+        // Validate and filter through repository
+        val filterResult = try {
+          repository.validateAndFilterMedia(
+            media = newSelectionList,
+            maxSelection = snapshot.maxSelection,
+            isStory = snapshot.isStory
           )
+        } catch (e: Exception) {
+          if (e is CancellationException) throw e
+          Log.w(Log.tag(MediaSendViewModel::class.java), "Unable to validate selected media", e)
+          internalSnackbarEvents.trySend(SnackbarEvent(message = R.string.SystemMediaPicker__unable_to_read_media))
+          return@withLock
         }
 
-        // Update story requirements
-        updateStorySendRequirements(filterResult.filteredMedia)
+        if (filterResult.filteredMedia.isNotEmpty()) {
+          // Initialize video trim states for new videos
+          val maxVideoDurationUs = getMaxVideoDurationUs()
+          val initializedVideoEditorStates = filterResult.filteredMedia
+            .filterNot { snapshot.editorStateMap.containsKey(it.uri) }
+            .filter { isNonGifVideo(it) }
+            .associate { video ->
+              val durationUs = video.duration.milliseconds.inWholeMicroseconds
+              video.uri to EditorState.VideoTrim.forVideo(durationUs, maxVideoDurationUs)
+            }
 
-        // Start pre-uploads for new media
-        val newMedia = filterResult.filteredMedia.toSet().intersect(media).toList()
-        startUpload(newMedia)
-      }
+          val initializedImageEditorStates = filterResult.filteredMedia
+            .filterNot { snapshot.editorStateMap.containsKey(it.uri) }
+            .filter { ContentTypeUtil.isImageType(it.contentType) }
+            .associate { image ->
+              // TODO - this should likely be in a repository?
+              val editorModel = EditorModel.create(0x0)
+              val element = EditorElement(
+                UriGlideRenderer(
+                  image.uri,
+                  true,
+                  0,
+                  0,
+                  UriGlideRenderer.STRONG_BLUR,
+                  object : RequestListener<Bitmap> {
+                    override fun onResourceReady(resource: Bitmap?, model: Any?, target: Target<Bitmap?>?, dataSource: DataSource?, isFirstResource: Boolean): Boolean {
+                      return false
+                    }
 
-      if (filterResult.error != null) {
-        _mediaErrors.emit(filterResult.error)
+                    override fun onLoadFailed(e: GlideException?, model: Any?, target: Target<Bitmap?>?, isFirstResource: Boolean): Boolean {
+                      return false
+                    }
+                  }
+                )
+              )
+              element.flags.setSelectable(false).persist()
+              editorModel.addElement(element)
+              image.uri to EditorState.Image(editorModel)
+            }
+
+          updateState {
+            val newFocus = if (focusNewlyAdded) {
+              filterResult.filteredMedia.lastOrNull { it in media } ?: focusedMedia ?: filterResult.filteredMedia.firstOrNull()
+            } else {
+              focusedMedia ?: filterResult.filteredMedia.firstOrNull()
+            }
+
+            copy(
+              selectedMedia = filterResult.filteredMedia,
+              focusedMedia = newFocus,
+              editorStateMap = editorStateMap + initializedVideoEditorStates + initializedImageEditorStates
+            )
+          }
+
+          // Update story requirements
+          updateStorySendRequirements(filterResult.filteredMedia)
+
+          // Start pre-uploads for new media
+          val newMedia = filterResult.filteredMedia.toSet().intersect(media).toList()
+          startUpload(newMedia)
+        }
+
+        if (filterResult.error != null) {
+          _mediaErrors.emit(filterResult.error)
+        }
       }
     }
   }
@@ -523,6 +557,8 @@ class MediaSendViewModel(
         cameraFirstCapture = newCameraFirstCapture
       )
     }
+
+    releaseUnusedPickerPermissions()
 
     if (newSelection.isEmpty() && !snapshot.suppressEmptyError) {
       viewModelScope.launch {
@@ -881,6 +917,8 @@ class MediaSendViewModel(
    * @return Result of the send operation.
    */
   suspend fun send(): SendResult {
+    // A direct send request must also wait for files selected in the picker.
+    pickerJob?.join()
     val snapshot = state.value
 
     // Check for untrusted identities
@@ -935,6 +973,8 @@ class MediaSendViewModel(
   //region Lifecycle
 
   override fun onCleared() {
+    cleared = true
+    SignalExecutors.BOUNDED_IO.execute { SystemMediaPicker.releaseUnusedPermissions(MediaSendDependencies.application, this) }
     preUploadController.cancelAllUploads()
     preUploadController.deleteAbandonedAttachments()
   }
@@ -949,6 +989,8 @@ class MediaSendViewModel(
     private const val KEY_STATE = "media_send_vm_state"
     private const val KEY_EDITED_VIDEO_URIS = "media_send_vm_edited_video_uris"
     private const val KEY_BACK_STACK = "media_send_vm_back_stack"
+    private const val KEY_PICKED_URIS = "system_picker_uris"
+    private const val KEY_PENDING_PICKER_URIS = "system_picker_pending_uris"
   }
 
   /**

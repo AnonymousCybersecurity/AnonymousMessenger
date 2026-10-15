@@ -221,8 +221,6 @@ private fun PermissionList(permissions: List<String>) {
   if (permissions.any {
       it == Manifest.permission.READ_EXTERNAL_STORAGE ||
         it == Manifest.permission.WRITE_EXTERNAL_STORAGE ||
-        it == Manifest.permission.READ_MEDIA_IMAGES ||
-        it == Manifest.permission.READ_MEDIA_VIDEO ||
         it == Manifest.permission.READ_MEDIA_AUDIO
     }
   ) {

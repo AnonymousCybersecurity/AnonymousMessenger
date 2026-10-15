@@ -17,7 +17,6 @@ import org.signal.core.ui.CoreUiDependencies;
 import org.signal.core.ui.R;
 import org.signal.core.util.BidiUtil;
 import org.signal.core.util.NoExternalStorageException;
-import org.signal.core.util.permissions.PermissionCompat;
 import org.signal.core.ui.permissions.Permissions;
 
 import java.io.File;
@@ -106,13 +105,8 @@ public class StorageUtil {
   }
 
   public static boolean canReadAnyFromMediaStore() {
-    return Permissions.hasAny(CoreUiDependencies.INSTANCE.getApplication(), PermissionCompat.forImagesAndVideos());
-  }
-
-  public static boolean canOnlyReadSelectedMediaStore() {
-    return Build.VERSION.SDK_INT >= 34 &&
-           Permissions.hasAll(CoreUiDependencies.INSTANCE.getApplication(), Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) &&
-           !Permissions.hasAny(CoreUiDependencies.INSTANCE.getApplication(), Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO);
+    return Build.VERSION.SDK_INT <= 32 &&
+           Permissions.hasAll(CoreUiDependencies.INSTANCE.getApplication(), Manifest.permission.READ_EXTERNAL_STORAGE);
   }
 
   public static @NonNull Uri getVideoUri() {

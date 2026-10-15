@@ -30,10 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.MultiplePermissionsState
 import com.google.accompanist.permissions.PermissionState
 import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.google.accompanist.permissions.rememberPermissionState
 import org.signal.camera.CameraScreenEvents
 import org.signal.camera.CameraScreenState
@@ -43,7 +41,6 @@ import org.signal.core.ui.compose.SignalIcons
 import org.signal.core.ui.compose.theme.SignalTheme
 import org.signal.core.ui.permissions.Permissions
 import org.signal.core.util.getParcelableExtraCompat
-import org.signal.core.util.permissions.PermissionCompat
 import org.thoughtcrime.securesms.R
 import org.thoughtcrime.securesms.recipients.Recipient
 import org.thoughtcrime.securesms.recipients.RecipientId
@@ -76,14 +73,6 @@ class UsernameQrScannerActivity : AppCompatActivity() {
     }
 
     setContent {
-      val galleryPermissionState: MultiplePermissionsState = rememberMultiplePermissionsState(permissions = PermissionCompat.forImages().toList()) { grants ->
-        if (grants.values.all { it }) {
-          galleryLauncher.launch(Unit)
-        } else {
-          Toast.makeText(this, R.string.ChatWallpaperPreviewActivity__viewing_your_gallery_requires_the_storage_permission, Toast.LENGTH_SHORT).show()
-        }
-      }
-
       val cameraPermissionState: PermissionState = rememberPermissionState(permission = Manifest.permission.CAMERA)
       val state by viewModel.state
 
@@ -101,19 +90,12 @@ class UsernameQrScannerActivity : AppCompatActivity() {
           state = state,
           cameraState = cameraState,
           cameraEmitter = cameraViewModel::onEvent,
-          galleryPermissionsState = galleryPermissionState,
           cameraPermissionState = cameraPermissionState,
           onQrResultHandled = {
             finish()
           },
           onOpenCameraClicked = { askCameraPermissions() },
-          onOpenGalleryClicked = {
-            if (galleryPermissionState.allPermissionsGranted) {
-              galleryLauncher.launch(Unit)
-            } else {
-              galleryPermissionState.launchMultiplePermissionRequest()
-            }
-          },
+          onOpenGalleryClicked = { galleryLauncher.launch(Unit) },
           onRecipientFound = { recipient ->
             val intent = Intent().apply {
               putExtra(KEY_RECIPIENT_ID, recipient.id)
@@ -155,7 +137,6 @@ fun Content(
   state: UsernameQrScannerViewModel.ScannerState,
   cameraState: CameraScreenState,
   cameraEmitter: (CameraScreenEvents) -> Unit,
-  galleryPermissionsState: MultiplePermissionsState,
   cameraPermissionState: PermissionState,
   onQrResultHandled: () -> Unit,
   onOpenCameraClicked: () -> Unit,

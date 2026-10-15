@@ -7,7 +7,6 @@ package org.signal.mediasend
 
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
-import org.signal.core.models.media.MediaFolder
 
 internal fun NavBackStack<NavKey>.goToEdit() {
   goToSingle(MediaSendNavKey.Edit)
@@ -19,10 +18,6 @@ internal fun NavBackStack<NavKey>.goToSend() {
 
 internal fun NavBackStack<NavKey>.goToFolders() {
   goToSingle(MediaSendNavKey.Select.Folders)
-}
-
-internal fun NavBackStack<NavKey>.goToFiles(mediaFolder: MediaFolder) {
-  add(MediaSendNavKey.Select.Files(mediaFolder))
 }
 
 internal fun NavBackStack<NavKey>.goToTextStory() {

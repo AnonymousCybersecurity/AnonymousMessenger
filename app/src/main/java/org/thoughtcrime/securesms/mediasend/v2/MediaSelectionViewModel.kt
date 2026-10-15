@@ -11,6 +11,7 @@ import com.google.common.io.ByteStreams
 import io.reactivex.rxjava3.core.Maybe
 import io.reactivex.rxjava3.core.Observable
 import io.reactivex.rxjava3.core.Single
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
 import io.reactivex.rxjava3.disposables.CompositeDisposable
 import io.reactivex.rxjava3.disposables.Disposable
 import io.reactivex.rxjava3.kotlin.plusAssign
@@ -154,7 +155,7 @@ class MediaSelectionViewModel(
     return store.state.storySendRequirements
   }
 
-  fun addMedia(media: Set<Media>) {
+  fun addMedia(media: Set<Media>, onComplete: (Set<Uri>) -> Unit = {}) {
     val newSelectionList: List<Media> = linkedSetOf<Media>().apply {
       addAll(store.state.selectedMedia)
       addAll(media)
@@ -163,7 +164,9 @@ class MediaSelectionViewModel(
     disposables.add(
       repository
         .populateAndFilterMedia(newSelectionList, getMediaConstraints(), store.state.maxSelection, store.state.isStory)
-        .subscribe { filterResult ->
+        .observeOn(AndroidSchedulers.mainThread())
+        .doFinally { onComplete(store.state.selectedMedia.map { it.uri }.toSet()) }
+        .subscribe({ filterResult ->
           if (filterResult.filteredMedia.isNotEmpty()) {
             store.update {
               val maxDuration = it.calculateMaxVideoDurationUs(getMediaConstraints().getEditorVideoMaxSize())
@@ -201,7 +204,10 @@ class MediaSelectionViewModel(
           if (filterResult.filterError != null) {
             mediaErrors.onNext(filterResult.filterError)
           }
-        }
+        }, { error ->
+          Log.w(TAG, "Unable to validate selected media", error)
+          mediaErrors.onNext(MediaValidator.FilterError.ItemInvalidType)
+        })
     )
   }
 

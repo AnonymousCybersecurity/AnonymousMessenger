@@ -56,9 +56,12 @@ public final class WallpaperImageSelectionActivity extends AppCompatActivity
 
     setContentView(R.layout.wallpaper_image_selection_activity);
 
-    getSupportFragmentManager().beginTransaction()
-                               .replace(R.id.fragment_container, new MediaGalleryFragment())
-                               .commit();
+    // Keep the restored picker fragment and its pending result when the activity is recreated.
+    if (savedInstanceState == null) {
+      getSupportFragmentManager().beginTransaction()
+                                 .replace(R.id.fragment_container, new MediaGalleryFragment())
+                                 .commit();
+    }
   }
 
   @Override

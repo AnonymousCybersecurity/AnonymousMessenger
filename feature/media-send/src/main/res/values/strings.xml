@@ -1,5 +1,10 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
+  <string name="SystemMediaPicker__opening_media">Opening selected photos and videos…</string>
+  <string name="SystemMediaPicker__choose_photos_and_videos">Choose photos and videos</string>
+  <string name="SystemMediaPicker__only_selected_media">Choose the photos and videos you want to share.</string>
+  <string name="SystemMediaPicker__unable_to_read_media">Some selected photos or videos could not be opened. Please select them again.</string>
+  <string name="SystemMediaPicker__unavailable">No app is available to select photos and videos.</string>
   <!-- Dialog title shown when the user tries to leave the image editor with unsaved edits. -->
   <string name="MediaSendDialogs__discard_changes">Discard changes?</string>
   <!-- Dialog body explaining that leaving the image editor will discard any edits made to the current photo. -->
