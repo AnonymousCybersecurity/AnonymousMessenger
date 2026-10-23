@@ -200,15 +200,16 @@ Under **Variables → New repository variable**, enter these **four** public val
 | `PLAY_UPLOAD_CERT_SHA256` | `95:94:6B:99:6D:4D:1E:6E:9D:A0:7F:C2:FA:B8:96:6A:37:6A:15:29:8A:93:62:7C:5F:B7:1A:A1:B3:62:9D:A2` |
 | `PLAY_APP_SIGNING_SHA256` | `BB:61:44:69:31:3A:37:27:4B:F2:00:54:20:65:FD:4C:22:B1:56:4C:1C:9C:9B:2F:7E:88:D1:98:FA:DD:54:9D` |
 
-Fingerprints accept hex with or without colons. The user confirmed that the website and Play keystores use the same store password, so both workflows reuse the existing `KEYSTORE_PASSWORD` repository secret. Under **Secrets → New repository secret**, enter these **three** Play-specific values:
+Fingerprints accept hex with or without colons. Website and Play use independent signing credentials. Under **Secrets → New repository secret**, enter these **four** Play-specific values:
 
 | Exact name | Value entered privately |
 | --- | --- |
 | `PLAY_UPLOAD_KEYSTORE_BASE64` | Base64 of Messenger's existing registered upload keystore |
+| `PLAY_UPLOAD_KEYSTORE_PASSWORD` | Password verified against that Play upload keystore |
 | `PLAY_UPLOAD_KEY_ALIAS` | Existing private-key alias |
 | `PLAY_UPLOAD_KEY_PASSWORD` | Key password, possibly the same as store password |
 
-Keep the original website secrets. `PLAY_UPLOAD_KEYSTORE_PASSWORD` is no longer needed as a GitHub secret; the workflow supplies the shared `KEYSTORE_PASSWORD` value to the signing helper's internal password environment variable. An already-created duplicate secret is not deleted automatically. The website and Play certificate pins remain distinct, so retain separate keystore/alias selection until those entries are independently verified. Do not copy website key/alias values into Play slots merely because passwords match. No Photos/Explorer secret, `APPLICATION_PROPERTIES`, service-account JSON key or new PAT is needed.
+Keep the original website secrets. The first live run verified the website key, but Play preflight failed when it reused the website's `KEYSTORE_PASSWORD`. Play's four secrets were refreshed from the privately verified local upload keystore and credential file; Play preparation and Gradle signing now both use `PLAY_UPLOAD_KEYSTORE_PASSWORD`. No credential values are logged. The website and Play certificate pins remain distinct. No Photos/Explorer secret, `APPLICATION_PROPERTIES`, service-account JSON key or new PAT is needed.
 
 ### 6. Verify before publishing
 
