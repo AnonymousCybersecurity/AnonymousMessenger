@@ -1,8 +1,6 @@
 name: Website Android checks and manual release
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -67,7 +65,7 @@ jobs:
           CI_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           java -jar "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" sign \
-            --ks "$CI_KEYSTORE_PATH" --ks-key-alias "$CI_KEYSTORE_ALIAS" \
+            --ks "$WEBSITE_KEYSTORE_PATH" --ks-key-alias "$CI_KEYSTORE_ALIAS" \
             --ks-pass env:CI_KEYSTORE_PASSWORD --key-pass env:CI_KEY_PASSWORD \
             --out app-prod-website-release-signed.apk \
             app/build/outputs/apk/prodWebsite/release/app-prod-website-release-unsigned.apk
@@ -76,4 +74,4 @@ jobs:
         run: ruby scripts/release.rb publish-website
       - name: Remove restored website keystore
         if: always() && github.event_name == 'workflow_dispatch'
-        run: rm -f -- "$RUNNER_TEMP/messenger-upload.keystore"
+        run: rm -f -- "$RUNNER_TEMP/messenger-website.keystore"

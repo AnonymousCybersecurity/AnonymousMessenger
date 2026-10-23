@@ -1,5 +1,6 @@
 require 'minitest/autorun'
 require 'rexml/document'
+require 'yaml'
 require_relative '../../scripts/release'
 require_relative '../../scripts/verify-google-identity'
 require_relative '../../fastlane/release_config'
@@ -166,6 +167,89 @@ class ReleaseTest < Minitest::Test
     end
   end
 
+  def push_env(message, changes: {}, commits: [])
+    event = { 'deleted' => false, 'ref' => 'refs/heads/main', 'after' => SHA,
+      'head_commit' => { 'id' => SHA, 'message' => message }, 'commits' => commits,
+      'repository' => { 'id' => R::REPOSITORY_ID.to_i, 'full_name' => R::REPOSITORY } }.merge(changes)
+    path = File.join(@root, 'event.json')
+    write(path, JSON.generate(event))
+    @env.merge('GITHUB_EVENT_NAME' => 'push', 'GITHUB_EVENT_PATH' => path)
+  end
+
+  def test_main_push_routes_to_website_or_selected_play_track
+    { '' => ['github', 'internal', true, false], '[publish:github]' => ['github', 'internal', true, false],
+      '[publish:play]' => ['play', 'production', false, true],
+      '[publish:play:testtrack]' => ['play', 'internal', false, true],
+      '[publish:both]' => ['both', 'production', true, true],
+      '[publish:both:testtrack]' => ['both', 'internal', true, true] }.each do |marker, expected|
+      plan = R.release_plan(push_env("Improve messaging #{marker}"))
+      assert_equal expected, plan.values_at('release_destination', 'play_track', 'build_website', 'build_android'), marker
+      assert plan['prepare_release']
+      assert plan['setup_android']
+      assert_equal expected[3], plan['authenticate_play']
+      assert_equal expected[3], plan['publish_bundle']
+      assert_equal expected[0] == 'both', plan['attach_apk']
+    end
+    assert_equal 'production', R.release_plan(push_env("Improve messaging\n\n[PUBLISH:PLAY]"))['play_track']
+  end
+
+  def test_skip_ci_stops_every_build_and_publication_even_with_publish_marker
+    ['[skip ci]', '[ci skip]', '[no ci]', '[skip actions]', '[actions skip]', "\n\nskip-checks: true"].each do |skip|
+      plan = R.release_plan(push_env("Release [publish:both] #{skip}"))
+      assert plan['skip']
+      %w[setup_android prepare_release build_website build_android prepare_signing authenticate_play publish_bundle attach_apk].each do |step|
+        refute plan.fetch(step), step
+      end
+    end
+    plan = R.release_plan(push_env('[publish:play]', commits: [{ 'message' => 'Docs [skip ci]' }]))
+    assert plan['skip'], 'GitHub skips a push containing any skip-marked commit'
+  end
+
+  def test_bad_or_conflicting_publish_markers_cannot_fall_back_to_production
+    ['[publish:play:testtrak]', '[publish:both:production]', '[publish:]', '[publish:play', '[publish play]',
+     '[publish:play] [publish:both]', '[publish:play] [publish:play]', '[publish:play] [publish:broken'].each do |message|
+      assert_raises(ArgumentError, message) { R.release_plan(push_env(message)) }
+    end
+    assert_raises(ArgumentError) { R.release_plan(@env.merge('RELEASE_ACTION' => 'skip')) }
+  end
+
+  def test_only_the_tip_message_selects_a_destination_and_is_read_as_data
+    env = push_env("Fix sync: `echo unsafe` $(echo unsafe) \"quoted\" \u{1F512}\n[unrelated:marker]",
+      commits: [{ 'message' => 'Previous commit [publish:play]' }])
+    assert_equal 'github', R.release_plan(env)['release_destination']
+    env['GITHUB_OUTPUT'] = File.join(@root, 'outputs')
+    plan = R.write_plan(env)
+    exported = File.readlines(env.fetch('GITHUB_ENV'), chomp: true).map { |line| line.split('=', 2) }.to_h
+    assert_equal({ 'RELEASE_ACTION' => 'release', 'RELEASE_DESTINATION' => 'github', 'PLAY_TRACK' => 'internal' }, exported)
+    assert_includes File.read(env.fetch('GITHUB_OUTPUT')), 'build_website=true'
+    assert_equal plan, R.release_plan(env.merge(exported))
+  end
+
+  def test_push_requires_matching_main_tip_and_original_repository
+    [{ 'deleted' => true }, { 'head_commit' => nil }, { 'after' => 'b' * 40 },
+     { 'head_commit' => { 'id' => 'b' * 40, 'message' => '[publish:play]' } },
+     { 'ref' => 'refs/heads/feature' }, { 'repository' => { 'id' => 1, 'full_name' => R::REPOSITORY } }].each do |changes|
+      assert_raises(ArgumentError) { R.release_plan(push_env('[publish:play]', changes: changes)) }
+    end
+    %w[pull_request release schedule].each do |event|
+      assert_raises(ArgumentError) { R.release_plan(push_env('[publish:play]').merge('GITHUB_EVENT_NAME' => event)) }
+    end
+  end
+
+  def test_both_push_validates_both_note_files_before_any_tag_or_release_api_call
+    %w[[publish:both] [publish:both:testtrack]].each do |marker|
+      env = push_env(marker)
+      destination = R.release_plan(env).fetch('release_destination')
+      notes(play: 'RELEASE_NOTES_TODO')
+      api = ReleaseApi.new([])
+      assert_raises(ArgumentError) { R.prepare_github(api, destination, root: @root, env: env) }
+      assert_empty api.calls
+      notes(github: 'RELEASE_NOTES_TODO')
+      assert_raises(ArgumentError) { R.prepare_github(api, destination, root: @root, env: env) }
+      assert_empty api.calls
+    end
+  end
+
   def test_github_first_creates_exact_tag_then_markdown_and_generated_changelog
     notes
     api = ReleaseApi.new([['GET', '/git/ref/tags/v26.10.09-7', nil], ['POST', '/git/refs', {}],
@@ -266,6 +350,12 @@ class ReleaseTest < Minitest::Test
     assert_equal({ 'en-US' => 'Original build notes' }, R.info(root: selected.fetch('source')).fetch('play_notes'))
     assert_includes File.read(File.join(@root, 'env')), 'PLAY_AAB_ARTIFACT_ID=5'
     assert_empty api.responses
+  end
+
+  def test_reuse_accepts_successful_main_push_build_with_original_notes
+    selected = R.resolve_build(build_api(changes: { 'event' => 'push' }), '123', @env)
+    assert_equal SHA, selected.fetch('sha')
+    assert_equal({ 'en-US' => 'Original build notes' }, R.play_notes(26100907, selected.fetch('source')))
   end
 
   def test_saved_upload_tags_original_source_even_when_dispatch_checkout_is_newer
@@ -402,6 +492,23 @@ class ReleaseTest < Minitest::Test
     refute File.exist?(File.join(@root, 'messenger-upload.keystore'))
   end
 
+  def test_combined_build_keystores_and_certificate_pins_stay_separate
+    env = @env.merge('PLAY_UPLOAD_KEYSTORE_BASE64' => Base64.strict_encode64('play store'),
+      'PLAY_UPLOAD_KEYSTORE_PASSWORD' => 'shared', 'PLAY_UPLOAD_KEY_ALIAS' => 'play', 'PLAY_UPLOAD_KEY_PASSWORD' => 'play-password',
+      'KEYSTORE_B64' => Base64.strict_encode64('website store'), 'KEYSTORE_PASSWORD' => 'shared',
+      'KEY_ALIAS' => 'website', 'KEY_PASSWORD' => 'website-password')
+    calls = []
+    runner = ->(args, **options) { calls << [args, options.fetch(:env)] }
+    R.prepare_website(env, root: @root, run: runner)
+    R.prepare_ci(env, root: @root, run: runner)
+    paths = File.readlines(env.fetch('GITHUB_ENV'), chomp: true).map { |line| line.split('=', 2) }.to_h
+    assert_equal 'website store', File.binread(paths.fetch('WEBSITE_KEYSTORE_PATH'))
+    assert_equal 'play store', File.binread(paths.fetch('CI_KEYSTORE_PATH'))
+    assert_equal [R::WEBSITE_CERT_SHA256, PIN], calls.map { |args, _| args.last }
+    assert_equal %w[website play], calls.map { |_, private_env| private_env.fetch('CI_KEYSTORE_ALIAS') }
+    assert_equal %w[website-password play-password], calls.map { |_, private_env| private_env.fetch('CI_KEY_PASSWORD') }
+  end
+
   def provider
     { 'name' => ID::PROVIDER, 'state' => 'ACTIVE', 'oidc' => { 'issuerUri' => 'https://token.actions.githubusercontent.com' },
       'attributeMapping' => { 'google.subject' => 'assertion.sub', 'attribute.repository_id' => 'assertion.repository_id',
@@ -477,13 +584,44 @@ class ReleaseTest < Minitest::Test
     assert_nil api.request('GET', '/releases/tags/v26.10.09-7', optional: true)
   end
 
-  def test_workflow_dispatch_only_and_github_page_before_android_build
+  def test_one_main_publishing_workflow_and_github_page_before_android_build
     text = File.read(File.join(R::ROOT, R::WORKFLOW))
     assert_includes text, 'workflow_dispatch:'
-    refute_match(/^  (push|pull_request|release|schedule):/, text.split("\npermissions:", 2).first)
+    workflow = YAML.load_file(File.join(R::ROOT, R::WORKFLOW))
+    triggers = workflow['on'] || workflow.fetch(true) # Psych also recognizes YAML 1.1's boolean spelling.
+    assert_equal ['main'], triggers.fetch('push').fetch('branches')
+    website = YAML.load_file(File.join(R::ROOT, '.github/workflows/release-foss.yml'))
+    website_triggers = website['on'] || website.fetch(true)
+    refute website_triggers.key?('push')
+    assert website_triggers.key?('pull_request')
+    assert website_triggers.key?('workflow_dispatch')
     assert_operator text.index('scripts/release.rb prepare-release'), :<, text.index('fastlane android build_release')
     assert_equal 1, text.scan('fastlane android build_release').length
     %w[setup-python release.py verify-google-identity.py setup-node].each { |removed| refute_includes text, removed }
     refute_includes text, 'npm '
+  end
+
+  def test_push_routing_selects_actual_workflow_build_and_publish_steps_once
+    workflow = YAML.load_file(File.join(R::ROOT, R::WORKFLOW))
+    steps = workflow.fetch('jobs').fetch('release').fetch('steps')
+    { '' => [1, 0], '[publish:play]' => [0, 1], '[publish:play:testtrack]' => [0, 1],
+      '[publish:both]' => [1, 1], '[publish:both:testtrack]' => [1, 1], '[skip ci]' => [0, 0] }.each do |marker, counts|
+      plan = R.release_plan(push_env(marker))
+      commands = steps.filter_map do |step|
+        condition = step['if']
+        selected = !condition || condition == 'always()' || condition.split(' || ').any? do |clause|
+          match = clause.match(/\Asteps\.plan\.outputs\.(\w+) == 'true'\z/)
+          match && plan.fetch(match[1]) == true
+        end
+        step['run'] if selected
+      end.join("\n")
+      assert_equal counts, [commands.scan(':app:assembleProdWebsiteRelease').length, commands.scan('fastlane android build_release').length], marker
+      assert_equal counts[0], commands.scan('scripts/release.rb publish-website').length
+      assert_equal counts[1], commands.scan('fastlane android publish track:').length
+      if counts[0] == 1
+        assert_includes commands, 'env -u CI_KEYSTORE_PATH ./gradlew'
+        assert_includes commands, '--ks "$WEBSITE_KEYSTORE_PATH"'
+      end
+    end
   end
 end

@@ -14,7 +14,7 @@ Inspection on 2026-10-23 confirmed:
 - Existing secrets are `GH_PAT`, `KEYSTORE_B64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`; no repository variables existed. Values were not read. Website secrets are retained. New GitHub operations use `github.token`; the unused `GH_PAT` secret is not deleted.
 - The pre-existing revision edit `5 → 6` and untracked `app/prodStore/release/app-prod-store-release.aab` are preserved. `update.bat` has unrelated merge/commit/force-push behavior and remains unchanged; launchers never invoke it. Existing Makefile/Docker entry points remain available. No existing local build wrapper needed consolidation.
 
-`release-foss.yml` now runs website checks/build on `main` pushes and PRs. Only its manual dispatch signs/publishes website assets. `android-play.yml` has only `workflow_dispatch`. Commits, version changes and tag pushes do not publish. Both publishing workflows serialize in `messenger-publishing`.
+`android-play.yml` handles `main` pushes and manual command dispatches. `release-foss.yml` handles PR website checks/builds and the manual website release option; it has no push trigger, so a main push has one publisher. Both publishing workflows serialize in `messenger-publishing`. Tag pushes do not trigger publication. The command-based implementation is preserved in local branch `codex/android-release-commands` at `0eac5fb`; this commit-marker implementation uses `codex/android-release-markers`.
 
 The existing published website APK's verified certificate is `6B:09:4A:3D:5F:98:B7:D1:BC:F3:6A:8A:A4:18:05:B0:C8:4B:05:85:82:AE:E6:89:BD:27:08:CC:21:13:51:A4`, pinned in `scripts/artifact-verification.rb`. The saved local AAB has certificate `95:94:6B:99:6D:4D:1E:6E:9D:A0:7F:C2:FA:B8:96:6A:37:6A:15:29:8A:93:62:7C:5F:B7:1A:A1:B3:62:9D:A2`. Actual file signature/package/version checks passed for those artifacts. During guided setup the user supplied the same upload fingerprint from Play Console, and it was compared with the saved AAB again. The user also supplied Messenger's separate Play app signing SHA-256: `BB:61:44:69:31:3A:37:27:4B:F2:00:54:20:65:FD:4C:22:B1:56:4C:1C:9C:9B:2F:7E:88:D1:98:FA:DD:54:9D`. Actual verification of a Google-generated APK against that signing pin remains pending an authorized Both run. Access to the private upload key still needs the signing preflight.
 
@@ -45,7 +45,7 @@ Windows `.cmd` files call PowerShell 5.1 from their own repository directory, in
 
 ## Prepare a version and separate notes
 
-Order: **bump → write/review both notes → commit/push → explicitly dispatch**.
+Order: **bump → write/review required notes → commit with the chosen marker → push to main**. For command-based publication, commit with `[skip ci]`, push, then explicitly dispatch the command. Local version bumps and builds do not publish.
 
 ```powershell
 .\release bump
@@ -70,9 +70,29 @@ Replace `RELEASE_NOTES_TODO`. Missing, blank, comment-only, or unfinished notes 
 
 The developer or coding agent writes notes during preparation; publishing reads committed files. GitHub requires GitHub notes, Play requires exact-code English notes plus supplied translations, Both requires both destinations, all **before tagging or publishing**. Build-only can succeed without notes, but later reuse requires completed Play notes in that build's original commit. Today's notes cannot repair an old build's original source.
 
+## Main push commit markers
+
+The final commit message of a push to `main` selects the destination. These are commit-message markers, not Git tags. Subject and body are read as data from GitHub's event file, without shell interpolation. Earlier commits' publish markers do not select the destination. For a squash/merge, put the intended marker in the resulting main-branch commit message.
+
+| Main tip commit message | Result |
+| --- | --- |
+| No publish marker | Website APK, GitHub Release page and `index-v1.json` updater metadata |
+| `[publish:github]` | Explicit form of the default website/GitHub publication |
+| `[skip ci]` | No push workflow, checks, build or publication |
+| `[publish:play]` | Play only, **production** |
+| `[publish:play:testtrack]` | Play only, **internal testing** |
+| `[publish:both]` | Website/GitHub publication and Play **production** |
+| `[publish:both:testtrack]` | Website/GitHub publication and Play **internal testing** |
+
+Use one publish marker. Unknown, incomplete or conflicting publish markers fail before Android builds or publication; they never fall back to production. The `:testtrack` suffix selects Play's `internal` track. A Both push builds one website APK and one signed Play AAB, preserving their separate signing identities. It also downloads and verifies Google's universal APK for attachment to the same GitHub Release, without another Android build.
+
+All publishing requires a fresh version and completed committed notes for its destination; Both requires both note files before any tag/page is created. Default website publication also requires GitHub notes. Git tags remain immutable and are created automatically from that source commit. PRs build/check the website variant without publishing; other branch and tag pushes do not run these publishing workflows.
+
+GitHub natively skips push/PR runs when a skip instruction appears in a pushed commit (not only the tip), even alongside a publish marker. The planner also recognizes the native skip spellings. A manual dispatch still runs from a skip-marked source. See [GitHub's skip instructions](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/skip-workflow-runs).
+
 ## Release commands and Actions inputs
 
-Use **Actions → Android Google Play → Run workflow**, on `main`, or:
+The existing commands remain available. Use **Actions → Android build and publishing → Run workflow**, on `main`, or:
 
 | Command | Inputs/result |
 | --- | --- |
@@ -87,15 +107,15 @@ Use **Actions → Android Google Play → Run workflow**, on `main`, or:
 | `.\release internal <successful-run-id>` | `action=internal`, `build_run_id`; saved AAB to internal without rebuilding |
 | `.\release --help` | Help; also `help`, `-h`, or no arguments |
 
-Actions defaults to **build**, saving an AAB without publication. New uploads default to **internal**. Production must be selected explicitly and remains subject to Google review, eligibility, policies and managed publishing. Review errors are not silently retried with deferred review. Track applies only to Play/Both; saved-build reuse always targets internal. Run ID applies only to reuse and versionCode only to promotion. There is no standalone APK attachment/recovery mode.
+Manual Actions defaults to **build**, saving an AAB without publication. Manual command uploads retain their **internal** default; choose `--play-track production` explicitly for those commands. Push markers instead default to production as shown above. Manual `release github` creates the page/tag only, and manual `release both` adds the Play APK without building website assets; use a Both push or the manual website workflow when website updater assets are needed. Publication remains subject to Google review, eligibility, policies and managed publishing. Review errors are not silently retried with deferred review. Track applies only to Play/Both; saved-build reuse always targets internal. Run ID applies only to reuse and versionCode only to promotion. There is no standalone APK attachment/recovery mode.
 
 ### Release order, tags and retry behavior
 
 1. Run mocked release tooling checks, isolated native Kotlin tasks and real Java key fixtures.
 2. Validate required committed notes and Messenger identity variables. Create/reuse `v<versionName>` pointing at the exact workflow commit. Annotated tags resolve too; a tag pointing elsewhere fails and is never moved.
-3. GitHub/Both publishes the page with prepared Markdown followed by GitHub's generated changelog. Retries preserve nonempty existing descriptions, including drafts; empty bodies are filled. GitHub-only stops here.
-4. Play/Both verifies the private upload key/pin, runs Messenger's app/media-send unit tests and release lint, builds one `prodStoreRelease` AAB and checks native alignment. Verify the actual AAB manifest and every payload entry's signature, then save it with provenance.
-5. Authenticate through short-lived OIDC after compilation and upload the AAB with only exact-code notes to the selected track.
+3. GitHub/Both publishes the page with prepared Markdown followed by GitHub's generated changelog. Retries preserve nonempty existing descriptions, including drafts; empty bodies are filled. Manual GitHub-only stops here.
+4. For a default/GitHub/Both push, verify the existing website key/pin, run website app/media-send unit tests and release lint, and build one `prodWebsiteRelease` APK. For Play/Both, also verify the private upload key/pin, run the corresponding store checks, build one `prodStoreRelease` AAB and check native alignment. Verify the actual AAB manifest and every payload entry's signature, then save it with provenance. Website and Play keystores have separate paths; the website build is explicitly unsigned before signing with the website key.
+5. For a website push, sign and verify the website APK, attach it and `index-v1.json`, then mark that release latest. For Play, authenticate through short-lived OIDC after compilation and upload the AAB with only exact-code notes to the selected track.
 6. Both polls Play's generated-APK API for up to ten minutes, selecting `generatedUniversalApk` under the expected app signing certificate. It downloads Google's APK without a second Android build.
 7. Verify actual APK signature with `apksigner`, and package/name/code with `aapt2`; reject unexpected signers, split/debug APKs. Attach `AnonymousMessenger-Play-<versionName>.apk`. Existing assets are reused only when name/state/size/SHA-256 match; conflicts fail without overwriting/deletion.
 
@@ -107,15 +127,15 @@ Promotion reads current Play tracks, selects highest/exact internal code, reject
 
 Successful builds save **`anonymous-messenger-<full source SHA>` for 14 days** in the run's Artifacts section. It contains `app-prod-store-release.aab` and `release-build.json`: schema, package/name/code, source SHA, repository/workflow/branch, run ID/attempt, variant, upload pin and AAB SHA-256. Reports remain under each module's `build/reports/` during the job, without separate retention or Release attachment. Local outputs persist until cleaned; existing `app/prodStore/release` is not a new build output path.
 
-Reuse requires a completed successful manual run from this repository/head repository, this workflow and `main`, a full source SHA, and exactly one unexpired expected artifact with a GitHub SHA-256 digest. Load version inputs and every supplied exact-code locale from the original commit, validate original notes, download with strict archive digest verification, compare provenance, and verify the actual AAB signature/package/version. Tag the original build SHA, then upload with original notes. No rebuild or private signing secret is needed. Reuse needs the public upload pin and Google authentication. A rotated upload pin intentionally rejects older artifacts pending review.
+Reuse requires a completed successful manual or push run from this repository/head repository, this workflow and `main`, a full source SHA, and exactly one unexpired expected artifact with a GitHub SHA-256 digest. Only runs that build an AAB provide that artifact. Load version inputs and every supplied exact-code locale from the original commit, validate original notes, download with strict archive digest verification, compare provenance, and verify the actual AAB signature/package/version. Tag the original build SHA, then upload with original notes. No rebuild or private signing secret is needed. An AAB already uploaded by a Play/Both push cannot be uploaded again; promote its internal version instead when applicable. Reuse needs the public upload pin and Google authentication. A rotated upload pin intentionally rejects older artifacts pending review.
 
 Official bundletool 1.18.3 is downloaded from `google/bundletool`, pinned to SHA-256 `a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29`. It and restored signing files use `RUNNER_TEMP`. Keystores are removed by always-run cleanup; the auth action cleans OIDC files and hosted runners are discarded. Ruby dependencies are locked in `Gemfile.lock`. `ruby/setup-ruby` provides Ruby; Bundler restores dependencies on cache hit and installs on cache miss. Gradle has a separate cache.
 
 ### Website/FOSS distribution
 
-Use **Actions → Website Android checks and manual release → Run workflow** on `main`. It validates GitHub notes/tag/page, checks/builds the website variant, checks alignment, verifies the private website key against the existing published certificate, signs with the original four website secrets, verifies the APK and attaches the original filename plus `index-v1.json`. The index preserves package, suggested code, filename and APK SHA-256 for `ApkUpdateJob`. Matching existing assets are reused; conflicts fail.
+Default/GitHub/Both pushes publish this distribution automatically. The manual alternative remains **Actions → Website Android checks and manual release → Run workflow** on `main`. Both paths validate GitHub notes/tag/page, check/build the website variant, check alignment, verify the private website key against the existing published certificate, sign with the original four website secrets, verify the APK and attach the original filename plus `index-v1.json`. The index preserves package, suggested code, filename and APK SHA-256 for `ApkUpdateJob`. Matching existing assets are reused; conflicts fail.
 
-GitHub-only or Play/Both pages without a website index are not website updates. New pages explicitly use `make_latest=false`, preserving `/releases/latest/download` for installed website clients. Only after the website workflow verifies and attaches both updater assets does it mark that release latest. Publish website assets for that version when updating website installations. Both distribution signatures and assets remain independent; Play APKs never replace the website updater assets. The old push-triggered publication is removed, while useful ordinary CI checks/builds remain.
+Pages without a website index are not website updates. New pages explicitly use `make_latest=false`, preserving `/releases/latest/download` for installed website clients. Only after verifying and attaching both updater assets does the publisher mark that release latest. Both distribution signatures and assets remain independent; Play APKs never replace the website updater assets.
 
 ## Account setup, one step at a time
 
@@ -192,7 +212,7 @@ Keep the original website secrets. `PLAY_UPLOAD_KEYSTORE_PASSWORD` is no longer 
 
 ### 6. Verify before publishing
 
-After separately authorized review/commit/push, explicitly start `.\release verify`. It verifies real secret contents/private key/certificate and live OIDC/Play read access without compiling or publishing. Only a later chosen publishing command exercises write permissions. Prepare a fresh unused version and completed notes first.
+After separately authorized review/commit/push using `[skip ci]`, explicitly start `.\release verify`. It verifies real secret contents/private key/certificate and live OIDC/Play read access without compiling or publishing. A later chosen publishing command or main push exercises write permissions. Prepare a fresh unused version and completed notes before publication.
 
 ## Focused verification and limits
 
@@ -209,6 +229,6 @@ Production uses Messenger app debug unit tests, media-send unit tests, release l
 
 Local/mock checks, task configuration, CI success, real Play upload, review and installation are separate outcomes. Account setup and authorized pushed CI verification remain necessary. Mocks do not prove a real upload.
 
-Local implementation validation on 2026-10-23 passed: 44 mocked tests / 333 assertions; 49 Windows launcher checks; actual native Gradle bump/template/routing fixtures; disposable Java private-key and Android artifact signature/tampering fixtures; workflow actionlint and Ruby/YAML syntax; real app/media-send test/lint task graph configuration; seven existing media-picker tests (3 `MediaSendPickerTest`, 4 `SystemMediaPickerTest`). Read-only checks also verified the saved AAB and existing published website APK identities/signatures, and the saved AAB's SHA-256 stayed unchanged. The full app unit suite, release lint execution, a new signed production build, device tests and remote CI/Play publication have not been run. Nothing was committed, pushed, dispatched or published; Photos and unrelated local work were preserved.
+The command-based implementation was saved locally at `0eac5fb`. Its local validation on 2026-10-23 passed: 44 mocked tests / 333 assertions; 49 Windows launcher checks; actual native Gradle bump/template/routing fixtures; disposable Java private-key and Android artifact signature/tampering fixtures; workflow actionlint and Ruby/YAML syntax; real app/media-send test/lint task graph configuration; seven existing media-picker tests (3 `MediaSendPickerTest`, 4 `SystemMediaPickerTest`). Read-only checks also verified the saved AAB and existing published website APK identities/signatures, and the saved AAB's SHA-256 stayed unchanged. On 2026-10-24 the marker extension passed 53 mocked tests / 499 assertions, including routing, skip/conflict, actual workflow step selection, key separation and push-build reuse; both workflows passed actionlint. The initial CI rollout uses `[skip ci]`, leaving version preparation and actual publication for a subsequent step. The full app unit suite, release lint execution, a new signed production build, device tests and remote CI/Play publication have not been run. Photos and unrelated local work were preserved.
 
 References: [Google WIF deployment pipelines](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines), [Play generated APK API](https://developers.google.com/android-publisher/api-ref/rest/v3/generatedapks/list), [Fastlane Play upload/promotion](https://docs.fastlane.tools/actions/upload_to_play_store/).

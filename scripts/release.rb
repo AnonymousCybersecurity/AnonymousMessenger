@@ -1,4 +1,4 @@
-# AnonymousMessenger release commands and shared Fastlane helpers. Publishing is opt-in.
+# AnonymousMessenger release commands, commit markers and shared Fastlane helpers.
 require 'base64'
 require 'digest'
 require 'fileutils'
@@ -110,10 +110,42 @@ module MessengerRelease
 
   def self.context(env = ENV)
     unless env['GITHUB_REPOSITORY'] == REPOSITORY && env['GITHUB_REPOSITORY_ID'] == REPOSITORY_ID &&
-           env['GITHUB_REF'] == "refs/heads/#{BRANCH}" && env['GITHUB_EVENT_NAME'] == 'workflow_dispatch' &&
+           env['GITHUB_REF'] == "refs/heads/#{BRANCH}" && %w[workflow_dispatch push].include?(env['GITHUB_EVENT_NAME']) &&
            env.fetch('GITHUB_SHA', '').match?(/\A[a-f0-9]{40}\z/)
-      raise ArgumentError, "Run this workflow manually from #{REPOSITORY} on #{BRANCH}."
+      raise ArgumentError, "Run this workflow from #{REPOSITORY} on #{BRANCH}, by push or manual dispatch."
     end
+    push_event(env) if env['GITHUB_EVENT_NAME'] == 'push'
+  end
+
+  def self.push_event(env)
+    event = JSON.parse(read_text(env.fetch('GITHUB_EVENT_PATH', '')))
+    unless event['deleted'] == false && event['ref'] == "refs/heads/#{BRANCH}" &&
+           event['after'] == env['GITHUB_SHA'] && event.dig('head_commit', 'id') == env['GITHUB_SHA'] &&
+           event.dig('head_commit', 'message').is_a?(String) &&
+           event.dig('repository', 'id').to_s == REPOSITORY_ID && event.dig('repository', 'full_name') == REPOSITORY
+      raise ArgumentError, 'Publishing requires a main push with a matching repository and tip commit.'
+    end
+    event
+  rescue JSON::ParserError, SystemCallError, TypeError
+    raise ArgumentError, 'Cannot read a valid GitHub push event.'
+  end
+
+  def self.push_options(env)
+    event = push_event(env)
+    messages = [event.fetch('head_commit')] + event.fetch('commits', [])
+    if messages.any? { |commit| commit.fetch('message', '').match?(/\[(?:skip ci|ci skip|no ci|skip actions|actions skip)\]|^skip-checks:\s*true\s*$/i) }
+      return { 'action' => 'skip', 'destination' => 'github', 'track' => 'internal' }
+    end
+
+    # Read data from the event file, never interpolate a commit message into shell code.
+    message = event.fetch('head_commit').fetch('message')
+    markers = message.scan(/\[publish:([^\]\r\n]*)\]/i).flatten.map(&:downcase)
+    if markers.length > 1 || message.scan(/\[publish\b/i).length != markers.length ||
+       markers.any? { |marker| !%w[github play play:testtrack both both:testtrack].include?(marker) }
+      raise ArgumentError, 'Use one marker: [publish:github], [publish:play[:testtrack]], or [publish:both[:testtrack]].'
+    end
+    destination, modifier = markers.fetch(0, 'github').split(':')
+    { 'action' => 'release', 'destination' => destination, 'track' => modifier == 'testtrack' ? 'internal' : 'production' }
   end
 
   def self.positive(value, label, maximum = nil)
@@ -125,9 +157,14 @@ module MessengerRelease
 
   def self.release_plan(env = ENV)
     context(env)
-    action = env['RELEASE_ACTION']
-    destination = env.fetch('RELEASE_DESTINATION', 'both')
-    raise ArgumentError, 'Unknown release action.' unless %w[verify build release internal promote].include?(action)
+    pushed = env['GITHUB_EVENT_NAME'] == 'push'
+    options = pushed ? push_options(env) : { 'action' => env['RELEASE_ACTION'],
+      'destination' => env.fetch('RELEASE_DESTINATION', 'both'), 'track' => env.fetch('PLAY_TRACK', 'internal') }
+    action = options.fetch('action')
+    destination = options.fetch('destination')
+    unless %w[verify build release internal promote].include?(action) || (pushed && action == 'skip')
+      raise ArgumentError, 'Unknown release action.'
+    end
     if action == 'release' && !%w[github play both].include?(destination)
       raise ArgumentError, 'Select github, play, or both.'
     end
@@ -136,14 +173,30 @@ module MessengerRelease
       positive(env.fetch('PLAY_VERSION_CODE').strip, 'version_code', MAX_CODE)
     end
     play = action == 'release' && destination != 'github'
-    track = play ? env.fetch('PLAY_TRACK', 'internal') : 'internal'
+    track = play ? options.fetch('track') : 'internal'
     raise ArgumentError, 'Play track must be internal or production.' unless %w[internal production].include?(track)
 
     build = action == 'build' || play
-    { 'prepare_release' => action == 'release', 'build_android' => build,
+    website = pushed && action == 'release' && destination != 'play'
+    { 'release_action' => action, 'release_destination' => destination, 'skip' => action == 'skip',
+      'build_website' => website, 'setup_android' => build || website,
+      'prepare_release' => action == 'release', 'build_android' => build,
       'prepare_signing' => build || action == 'verify', 'authenticate_play' => play || %w[verify internal promote].include?(action),
       'publish_bundle' => play || action == 'internal', 'play_track' => track, 'download_aab' => action == 'internal',
       'attach_apk' => action == 'release' && destination == 'both' }
+  end
+
+  def self.write_plan(env = ENV)
+    plan = release_plan(env)
+    File.open(env.fetch('GITHUB_OUTPUT'), 'a:UTF-8') do |file|
+      plan.each { |key, value| file.puts "#{key}=#{value}" }
+    end
+    File.open(env.fetch('GITHUB_ENV'), 'a:UTF-8') do |file|
+      file.puts "RELEASE_ACTION=#{plan.fetch('release_action')}", "RELEASE_DESTINATION=#{plan.fetch('release_destination')}",
+                "PLAY_TRACK=#{plan.fetch('play_track')}"
+    end
+    puts "Selected #{plan.fetch('release_action')}: #{plan.fetch('release_destination')}, Play track #{plan.fetch('play_track')}."
+    plan
   end
 
   class Github
@@ -279,7 +332,7 @@ module MessengerRelease
     end
   end
 
-  def self.prepare_ci(env = ENV, root: ROOT, run: method(:execute))
+  def self.prepare_ci(env = ENV, root: ROOT, run: method(:execute), filename: 'messenger-upload.keystore', path_variable: 'CI_KEYSTORE_PATH')
     keys = %w[PLAY_UPLOAD_KEYSTORE_BASE64 PLAY_UPLOAD_KEYSTORE_PASSWORD PLAY_UPLOAD_KEY_ALIAS PLAY_UPLOAD_KEY_PASSWORD
               PLAY_UPLOAD_CERT_SHA256 RUNNER_TEMP GITHUB_ENV]
     missing = keys.select { |key| env.fetch(key, '').strip.empty? }
@@ -293,7 +346,7 @@ module MessengerRelease
     end
     raise ArgumentError, 'Upload keystore is empty.' if raw.empty?
 
-    store = File.join(env.fetch('RUNNER_TEMP'), 'messenger-upload.keystore')
+    store = File.join(env.fetch('RUNNER_TEMP'), filename)
     File.open(store, 'wb', 0o600) { |file| file.write(raw) }
     File.chmod(0o600, store)
     begin
@@ -304,7 +357,7 @@ module MessengerRelease
       FileUtils.rm_f(store)
       raise ArgumentError, 'Messenger upload-key verification failed. Check keystore, alias, passwords and registered upload SHA-256.'
     end
-    File.open(env.fetch('GITHUB_ENV'), 'a:UTF-8') { |file| file.puts "CI_KEYSTORE_PATH=#{store}" }
+    File.open(env.fetch('GITHUB_ENV'), 'a:UTF-8') { |file| file.puts "#{path_variable}=#{store}" }
     puts 'Messenger private upload key and certificate verified; private credentials are not logged.'
   end
 
@@ -328,10 +381,10 @@ module MessengerRelease
     positive(run_id, 'build_run_id')
     run = api.request('GET', "/actions/runs/#{run_id}")
     unless run.dig('repository', 'id').to_s == REPOSITORY_ID && run['path'] == WORKFLOW &&
-           run['event'] == 'workflow_dispatch' && run['head_branch'] == BRANCH &&
+           %w[workflow_dispatch push].include?(run['event']) && run['head_branch'] == BRANCH &&
            run.dig('head_repository', 'id').to_s == REPOSITORY_ID && run['status'] == 'completed' &&
            run['conclusion'] == 'success' && run.fetch('head_sha', '').match?(/\A[a-f0-9]{40}\z/)
-      raise ArgumentError, 'Choose a successful manual Messenger build from this workflow on main.'
+      raise ArgumentError, 'Choose a successful Messenger build from this workflow on main (push or manual dispatch).'
     end
     sha = run.fetch('head_sha')
     artifacts = api.request('GET', "/actions/runs/#{run_id}/artifacts?per_page=100")
@@ -442,10 +495,7 @@ module MessengerRelease
     case command
     when 'notes'
       puts JSON.pretty_generate(release_info(positional))
-    when 'plan'
-      File.open(ENV.fetch('GITHUB_OUTPUT'), 'a:UTF-8') do |file|
-        release_plan.each { |key, value| file.puts "#{key}=#{value}" }
-      end
+    when 'plan' then write_plan
     when 'prepare-ci' then prepare_ci
     when 'prepare-website' then prepare_website
     when 'publish-website' then publish_website(Github.new)

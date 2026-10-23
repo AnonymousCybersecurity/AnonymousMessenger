@@ -88,7 +88,7 @@ module MessengerRelease
     inputs = env.to_h.merge('PLAY_UPLOAD_KEYSTORE_BASE64' => env.fetch('KEYSTORE_B64', ''),
       'PLAY_UPLOAD_KEYSTORE_PASSWORD' => env.fetch('KEYSTORE_PASSWORD', ''), 'PLAY_UPLOAD_KEY_ALIAS' => env.fetch('KEY_ALIAS', ''),
       'PLAY_UPLOAD_KEY_PASSWORD' => env.fetch('KEY_PASSWORD', ''), 'PLAY_UPLOAD_CERT_SHA256' => WEBSITE_CERT_SHA256)
-    prepare_ci(inputs, root: root, run: run)
+    prepare_ci(inputs, root: root, run: run, filename: 'messenger-website.keystore', path_variable: 'WEBSITE_KEYSTORE_PATH')
   end
 
   def self.publish_website(api, env = ENV, root: ROOT, run: method(:execute))

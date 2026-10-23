@@ -1,6 +1,8 @@
-name: Android Google Play
+name: Android build and publishing
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       action:
@@ -40,25 +42,42 @@ env:
 
 jobs:
   checks:
-    if: github.repository_id == '1198767196' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    if: github.repository_id == '1198767196' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !github.event.deleted))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    outputs:
+      skip: ${{ steps.plan.outputs.skip }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ruby/setup-ruby@v1
         with:
           bundler-cache: true
+      - name: Validate main push marker or manual command
+        id: plan
+        env:
+          RELEASE_ACTION: ${{ inputs.action }}
+          RELEASE_DESTINATION: ${{ inputs.destination }}
+          PLAY_TRACK: ${{ inputs.play_track }}
+          PLAY_BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          PLAY_VERSION_CODE: ${{ inputs.version_code }}
+        run: ruby scripts/release.rb plan
       - run: bundle exec ruby tests/release/run.rb
+        if: steps.plan.outputs.skip != 'true'
       - uses: actions/setup-java@v6.1.0
+        if: steps.plan.outputs.skip != 'true'
         with:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v6.4.0
+        if: steps.plan.outputs.skip != 'true'
       - run: bundle exec ruby tests/release/check_upload_key.rb
+        if: steps.plan.outputs.skip != 'true'
       - run: bundle exec ruby tests/release/check_gradle_tasks.rb
+        if: steps.plan.outputs.skip != 'true'
 
   release:
     needs: checks
+    if: needs.checks.outputs.skip != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
@@ -96,10 +115,18 @@ jobs:
         if: steps.plan.outputs.attach_apk == 'true'
         run: ruby scripts/release.rb resolve-apk
       - uses: actions/setup-java@v6.1.0
-        if: steps.plan.outputs.prepare_signing == 'true' || steps.plan.outputs.download_aab == 'true'
+        if: steps.plan.outputs.setup_android == 'true' || steps.plan.outputs.prepare_signing == 'true' || steps.plan.outputs.download_aab == 'true'
         with:
           distribution: temurin
           java-version: '21'
+      - name: Verify existing website private signing key
+        if: steps.plan.outputs.build_website == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ruby scripts/release.rb prepare-website
       - name: Verify registered Messenger upload key
         if: steps.plan.outputs.prepare_signing == 'true'
         env:
@@ -110,25 +137,31 @@ jobs:
           PLAY_UPLOAD_CERT_SHA256: ${{ vars.PLAY_UPLOAD_CERT_SHA256 }}
         run: ruby scripts/release.rb prepare-ci
       - uses: android-actions/setup-android@v4.0.4
-        if: steps.plan.outputs.build_android == 'true'
+        if: steps.plan.outputs.setup_android == 'true'
       - name: Install Messenger Android SDK
-        if: steps.plan.outputs.build_android == 'true'
+        if: steps.plan.outputs.setup_android == 'true'
         run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0' 'ndk;28.0.13004108'
       - uses: gradle/actions/setup-gradle@v6.4.0
-        if: steps.plan.outputs.build_android == 'true'
+        if: steps.plan.outputs.setup_android == 'true'
       - name: Test real artifact verification with disposable keys
-        if: steps.plan.outputs.build_android == 'true'
+        if: steps.plan.outputs.setup_android == 'true'
         run: bundle exec ruby tests/release/check_android_artifacts.rb
       - name: Get pinned official bundletool
         if: steps.plan.outputs.build_android == 'true' || steps.plan.outputs.download_aab == 'true'
         run: ruby scripts/release.rb setup-tools
       - name: Add swap for R8
-        if: steps.plan.outputs.build_android == 'true'
+        if: steps.plan.outputs.setup_android == 'true'
         run: |
           sudo fallocate -l 8G /messenger-swap
           sudo chmod 600 /messenger-swap
           sudo mkswap /messenger-swap
           sudo swapon /messenger-swap
+      - name: Run Messenger checks and build website APK once
+        if: steps.plan.outputs.build_website == 'true'
+        run: |
+          chmod +x gradlew
+          env -u CI_KEYSTORE_PATH ./gradlew :app:testProdWebsiteDebugUnitTest :feature:media-send:testDebugUnitTest :app:lintProdWebsiteRelease :app:assembleProdWebsiteRelease --no-daemon --stacktrace --max-workers=1
+          python3 tools/check_native_alignment.py app/build/outputs/apk/prodWebsite/release/app-prod-website-release-unsigned.apk
       - name: Check app and build signed AAB once
         if: steps.plan.outputs.build_android == 'true'
         env:
@@ -150,6 +183,21 @@ jobs:
             app/build/outputs/bundle/prodStoreRelease/release-build.json
           if-no-files-found: error
           retention-days: 14
+      - name: Sign website APK with the existing website key
+        if: steps.plan.outputs.build_website == 'true'
+        env:
+          CI_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          CI_KEYSTORE_ALIAS: ${{ secrets.KEY_ALIAS }}
+          CI_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          java -jar "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" sign \
+            --ks "$WEBSITE_KEYSTORE_PATH" --ks-key-alias "$CI_KEYSTORE_ALIAS" \
+            --ks-pass env:CI_KEYSTORE_PASSWORD --key-pass env:CI_KEY_PASSWORD \
+            --out app-prod-website-release-signed.apk \
+            app/build/outputs/apk/prodWebsite/release/app-prod-website-release-unsigned.apk
+      - name: Attach verified website APK and updater index
+        if: steps.plan.outputs.build_website == 'true'
+        run: ruby scripts/release.rb publish-website
       - name: Validate successful original build and committed Play notes
         if: steps.plan.outputs.download_aab == 'true'
         run: ruby scripts/release.rb resolve-build
@@ -193,5 +241,5 @@ jobs:
         if: inputs.action == 'promote'
         run: bundle exec fastlane android promote version_code:"$PLAY_VERSION_CODE"
       - name: Remove restored credentials
-        if: always() && steps.plan.outputs.prepare_signing == 'true'
-        run: rm -f -- "$RUNNER_TEMP/messenger-upload.keystore"
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/messenger-upload.keystore" "$RUNNER_TEMP/messenger-website.keystore"
