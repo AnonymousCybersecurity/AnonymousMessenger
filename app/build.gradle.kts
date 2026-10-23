@@ -74,13 +74,21 @@ android {
   android.bundle.language.enableSplit = false
 
   signingConfigs {
+    val requireSigning = providers.gradleProperty("requireReleaseSigning").orNull == "true" ||
+      gradle.startParameter.taskNames.any { it.substringAfterLast(':') in setOf("buildLocalApk", "buildLocalAab", "buildLocalBoth") }
+    if (requireSigning) {
+      require(listOf("CI_KEYSTORE_PATH", "CI_KEYSTORE_PASSWORD", "CI_KEYSTORE_ALIAS").all { !System.getenv(it).isNullOrBlank() }) {
+        "Signed builds require CI_KEYSTORE_PATH, CI_KEYSTORE_PASSWORD and CI_KEYSTORE_ALIAS (CI_KEY_PASSWORD defaults to the store password)."
+      }
+      require(file(System.getenv("CI_KEYSTORE_PATH")).isFile) { "CI_KEYSTORE_PATH must be an existing keystore." }
+    }
     System.getenv("CI_KEYSTORE_PATH")?.let { path ->
       create("ci") {
         println("Signing release build with keystore: '$path'")
         storeFile = file(path)
         storePassword = System.getenv("CI_KEYSTORE_PASSWORD")
         keyAlias = System.getenv("CI_KEYSTORE_ALIAS")
-        keyPassword = System.getenv("CI_KEYSTORE_PASSWORD")
+        keyPassword = System.getenv("CI_KEY_PASSWORD") ?: System.getenv("CI_KEYSTORE_PASSWORD")
         enableV4Signing = false
       }
     }

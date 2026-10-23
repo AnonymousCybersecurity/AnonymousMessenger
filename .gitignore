@@ -11,3 +11,11 @@ signing.properties
 .kotlin
 /reproducible-builds/certs
 /reproducible-builds/outputs
+/.release-work/
+/vendor/bundle/
+/.bundle/
+/fastlane/report.xml
+/fastlane/README.md
+/gha-creds-*.json
+*.keystore
+*.jks

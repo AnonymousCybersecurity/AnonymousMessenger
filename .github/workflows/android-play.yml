@@ -1,0 +1,197 @@
+name: Android Google Play
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Verify setup, save a build, release, upload a saved build, or promote
+        type: choice
+        default: build
+        options: [verify, build, release, internal, promote]
+      destination:
+        description: Release destination (Both publishes the GitHub page first)
+        type: choice
+        default: both
+        options: [github, play, both]
+      play_track:
+        description: New Play upload track (production explicitly skips testing tracks)
+        type: choice
+        default: internal
+        options: [internal, production]
+      build_run_id:
+        description: Successful original CI run ID for action=internal; no rebuild
+        type: string
+      version_code:
+        description: Internal versionCode for promotion (blank selects highest internal code)
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: messenger-publishing
+  cancel-in-progress: false
+
+env:
+  CI: 'true'
+  FASTLANE_OPT_OUT_USAGE: '1'
+  FASTLANE_SKIP_UPDATE_CHECK: '1'
+  FASTLANE_SKIP_DOCS: '1'
+
+jobs:
+  checks:
+    if: github.repository_id == '1198767196' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - run: bundle exec ruby tests/release/run.rb
+      - uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6.4.0
+      - run: bundle exec ruby tests/release/check_upload_key.rb
+      - run: bundle exec ruby tests/release/check_gradle_tasks.rb
+
+  release:
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+    env:
+      RELEASE_ACTION: ${{ inputs.action }}
+      RELEASE_DESTINATION: ${{ inputs.destination }}
+      PLAY_TRACK: ${{ inputs.play_track }}
+      PLAY_BUILD_RUN_ID: ${{ inputs.build_run_id }}
+      PLAY_VERSION_CODE: ${{ inputs.version_code }}
+      GITHUB_TOKEN: ${{ github.token }}
+      PLAY_APP_SIGNING_SHA256: ${{ vars.PLAY_APP_SIGNING_SHA256 }}
+      PLAY_UPLOAD_CERT_SHA256: ${{ vars.PLAY_UPLOAD_CERT_SHA256 }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - name: Select release steps
+        id: plan
+        run: ruby scripts/release.rb plan
+      - name: Validate Messenger identity and APK signing pin
+        if: steps.plan.outputs.authenticate_play == 'true'
+        env:
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+        run: |
+          ruby scripts/verify-google-identity.rb --configured
+      - name: Validate required notes, record immutable tag and publish GitHub page first
+        if: steps.plan.outputs.prepare_release == 'true'
+        run: ruby scripts/release.rb prepare-release
+      - name: Resolve version for Play APK attachment
+        if: steps.plan.outputs.attach_apk == 'true'
+        run: ruby scripts/release.rb resolve-apk
+      - uses: actions/setup-java@v6.1.0
+        if: steps.plan.outputs.prepare_signing == 'true' || steps.plan.outputs.download_aab == 'true'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Verify registered Messenger upload key
+        if: steps.plan.outputs.prepare_signing == 'true'
+        env:
+          PLAY_UPLOAD_KEYSTORE_BASE64: ${{ secrets.PLAY_UPLOAD_KEYSTORE_BASE64 }}
+          PLAY_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          PLAY_UPLOAD_KEY_ALIAS: ${{ secrets.PLAY_UPLOAD_KEY_ALIAS }}
+          PLAY_UPLOAD_KEY_PASSWORD: ${{ secrets.PLAY_UPLOAD_KEY_PASSWORD }}
+          PLAY_UPLOAD_CERT_SHA256: ${{ vars.PLAY_UPLOAD_CERT_SHA256 }}
+        run: ruby scripts/release.rb prepare-ci
+      - uses: android-actions/setup-android@v4.0.4
+        if: steps.plan.outputs.build_android == 'true'
+      - name: Install Messenger Android SDK
+        if: steps.plan.outputs.build_android == 'true'
+        run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0' 'ndk;28.0.13004108'
+      - uses: gradle/actions/setup-gradle@v6.4.0
+        if: steps.plan.outputs.build_android == 'true'
+      - name: Test real artifact verification with disposable keys
+        if: steps.plan.outputs.build_android == 'true'
+        run: bundle exec ruby tests/release/check_android_artifacts.rb
+      - name: Get pinned official bundletool
+        if: steps.plan.outputs.build_android == 'true' || steps.plan.outputs.download_aab == 'true'
+        run: ruby scripts/release.rb setup-tools
+      - name: Add swap for R8
+        if: steps.plan.outputs.build_android == 'true'
+        run: |
+          sudo fallocate -l 8G /messenger-swap
+          sudo chmod 600 /messenger-swap
+          sudo mkswap /messenger-swap
+          sudo swapon /messenger-swap
+      - name: Check app and build signed AAB once
+        if: steps.plan.outputs.build_android == 'true'
+        env:
+          CI_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          CI_KEYSTORE_ALIAS: ${{ secrets.PLAY_UPLOAD_KEY_ALIAS }}
+          CI_KEY_PASSWORD: ${{ secrets.PLAY_UPLOAD_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          bundle exec fastlane android build_release
+          python3 tools/check_native_alignment.py app/build/outputs/bundle/prodStoreRelease/app-prod-store-release.aab
+          ruby scripts/release.rb record-build
+      - name: Save signed AAB and provenance
+        if: steps.plan.outputs.build_android == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: anonymous-messenger-${{ github.sha }}
+          path: |
+            app/build/outputs/bundle/prodStoreRelease/app-prod-store-release.aab
+            app/build/outputs/bundle/prodStoreRelease/release-build.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Validate successful original build and committed Play notes
+        if: steps.plan.outputs.download_aab == 'true'
+        run: ruby scripts/release.rb resolve-build
+      - name: Download saved signed AAB
+        if: steps.plan.outputs.download_aab == 'true'
+        uses: actions/download-artifact@v8.0.2
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.build_run_id }}
+          artifact-ids: ${{ env.PLAY_AAB_ARTIFACT_ID }}
+          path: app/build/outputs/bundle/prodStoreRelease
+          digest-mismatch: error
+      - name: Verify AAB content and original source provenance
+        if: steps.plan.outputs.download_aab == 'true'
+        run: ruby scripts/release.rb verify-build
+      # Authenticate after compilation; keep short-lived credentials fresh for publishing.
+      - name: Authenticate using Messenger service account and GitHub OIDC
+        if: steps.plan.outputs.authenticate_play == 'true'
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: graphene-play-publishing
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - name: Verify Play read access without publishing
+        if: inputs.action == 'verify'
+        run: bundle exec fastlane android verify_access
+      - name: Upload existing AAB and exact-version Play notes
+        if: steps.plan.outputs.publish_bundle == 'true'
+        env:
+          PLAY_TARGET_TRACK: ${{ steps.plan.outputs.play_track }}
+        run: bundle exec fastlane android publish track:"$PLAY_TARGET_TRACK"
+      - name: Download Play-signed universal APK
+        if: steps.plan.outputs.attach_apk == 'true'
+        timeout-minutes: 15
+        run: bundle exec ruby scripts/download-play-apk.rb
+      - name: Verify actual Messenger APK signature, package and versions before attachment
+        if: steps.plan.outputs.attach_apk == 'true'
+        run: ruby scripts/release.rb attach-apk
+      - name: Promote selected internal version preserving Play release notes
+        if: inputs.action == 'promote'
+        run: bundle exec fastlane android promote version_code:"$PLAY_VERSION_CODE"
+      - name: Remove restored credentials
+        if: always() && steps.plan.outputs.prepare_signing == 'true'
+        run: rm -f -- "$RUNNER_TEMP/messenger-upload.keystore"

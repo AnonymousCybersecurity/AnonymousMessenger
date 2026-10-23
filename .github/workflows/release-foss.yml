@@ -1,190 +1,79 @@
-﻿name: Build & Release FOSS APK with Metadata
+name: Website Android checks and manual release
 
 on:
-    workflow_dispatch:
-    push:
-        branches:
-            - main
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'messenger-publishing' || format('messenger-checks-{0}', github.ref) }}
+  cancel-in-progress: false
 
 jobs:
-    build-release:
-        runs-on: ubuntu-latest
-
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v3
-
-            - name: Verify GitHub token (GH_PAT) is set
-              run: |
-                if [ -z "${{ secrets.GH_PAT }}" ]; then
-                    echo "❌ GitHub token 'GH_PAT' is missing."
-                    echo "Please set the 'GH_PAT' secret in your repository settings. Must be a token classic with Permissions read:org, repo, workflow"
-                    exit 1
-                else
-                    echo "✅ GitHub token 'GH_PAT' is set."
-                fi
-
-            - name: Set up JDK 21
-              uses: actions/setup-java@v4
-              with:
-                  java-version: '21'
-                  distribution: 'temurin'
-                  cache: gradle
-
-            - name: Make Gradle wrapper executable
-              run: chmod +x ./gradlew
-
-            - name: Add swap (reduce OOM risk)
-              run: |
-                # If a swapfile already exists / is enabled, disable and remove it
-                if sudo swapon --show | grep -qE '^/swapfile\b'; then
-                  sudo swapoff /swapfile
-                fi
-                if [ -f /swapfile ]; then
-                  sudo rm -f /swapfile
-                fi
-
-                sudo fallocate -l 8G /swapfile
-                sudo chmod 600 /swapfile
-                sudo mkswap /swapfile
-                sudo swapon /swapfile
-                free -h
-
-            - name: Build APK with Gradle
-              # Skip lintVital (separate JVM, ~8 min, heavy RAM) and cap workers to 1
-              # to lower peak memory so the runner is not reclaimed during R8/shrinking.
-              # Retry loop covers transient task failures (not a runner shutdown).
-              run: |
-                for attempt in 1 2 3; do
-                  if ./gradlew :app:assembleProdWebsiteRelease --no-daemon --max-workers=1 -x :app:lintVitalProdWebsiteRelease; then
-                    break
-                  fi
-                  if [ "$attempt" -eq 3 ]; then
-                    echo "Build failed after $attempt attempts."
-                    exit 1
-                  fi
-                  echo "Build attempt $attempt failed, retrying in 20s..."
-                  sleep 20
-                done
-
-            - name: Verify 16 KB native-library alignment
-              run: |
-                  APK_PATH=$(find app/build/outputs/apk/ -name "*.apk" -print -quit)
-                  python3 tools/check_native_alignment.py "$APK_PATH"
-
-            - name: List merged manifest files
-              run: find app/build/intermediates/merged_manifests/ -name "AndroidManifest.xml"
-
-            - name: Extract APK and manifest metadata
-              id: apk_info
-              run: |
-                  APK_PATH=$(find app/build/outputs/apk/ -name "*.apk" | head -n 1)
-                  MANIFEST=$(find app/build/intermediates/merged_manifests/ -name "AndroidManifest.xml" | head -n 1)
-
-                  VERSION_NAME=$(grep "android:versionName=" "$MANIFEST" | sed 's/.*versionName="//;s/".*//')
-                  VERSION_CODE=$(grep "android:versionCode=" "$MANIFEST" | sed 's/.*versionCode="//;s/".*//')
-                  PACKAGE_NAME=$(grep "package=" "$MANIFEST" | sed 's/.*package="//;s/".*//')
-
-                  echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-                  echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
-                  echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
-                  echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
-                  echo "release_tag=v$VERSION_NAME" >> $GITHUB_OUTPUT
-
-            - name: Show APK path and release tag
-              run: |
-                  echo "APK path: ${{ steps.apk_info.outputs.apk_path }}"
-                  echo "Release tag: ${{ steps.apk_info.outputs.release_tag }}"
-
-            - name: Decode keystore from secret
-              run: |
-                  echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > my-release-key.jks
-
-            - name: Install apksigner and zipalign
-              run: sudo apt-get update && sudo apt-get install -y apksigner zipalign
-
-            - name: Sign APK
-              id: signed_apk
-              run: |
-                  ORIGINAL_APK="${{ steps.apk_info.outputs.apk_path }}"
-                  CLEAN_NAME=$(basename "$ORIGINAL_APK" | sed 's/-unsigned//')
-                  SIGNED_APK_NAME="${CLEAN_NAME%.apk}-signed.apk"
-
-                  apksigner sign \
-                      --ks my-release-key.jks \
-                      --ks-key-alias ${{ secrets.KEY_ALIAS }} \
-                      --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
-                      --key-pass pass:${{ secrets.KEY_PASSWORD }} \
-                      --out "$SIGNED_APK_NAME" "$ORIGINAL_APK"
-
-                  echo "apk_path=$SIGNED_APK_NAME" >> $GITHUB_OUTPUT
-
-            - name: Compute SHA256 hash of signed APK
-              id: apkhash
-              run: |
-                  HASH=$(sha256sum "${{ steps.signed_apk.outputs.apk_path }}" | awk '{print $1}')
-                  echo "apk_hash=$HASH" >> $GITHUB_OUTPUT
-
-            - name: Generate APK metadata JSON
-              run: |
-                  APK_FILENAME=$(basename "${{ steps.signed_apk.outputs.apk_path }}")
-                  cat <<EOF > index-v1.json
-                  {
-                      "apps": [
-                          {
-                              "packageName": "${{ steps.apk_info.outputs.package_name }}",
-                              "suggestedVersionCode": ${{ steps.apk_info.outputs.version_code }}
-                          }
-                      ],
-                      "packages": {
-                          "${{ steps.apk_info.outputs.package_name }}": [
-                              {
-                                  "versionName": "${{ steps.apk_info.outputs.version_name }}",
-                                  "versionCode": ${{ steps.apk_info.outputs.version_code }},
-                                  "apkName": "$APK_FILENAME",
-                                  "hash": "${{ steps.apkhash.outputs.apk_hash }}"
-                              }
-                          ]
-                      }
-                  }
-                  EOF
-
-            - name: Show generated metadata
-              run: cat index-v1.json
-
-            - name: Debug GitHub token and release access
-              run: |
-                  echo "${{ secrets.GH_PAT }}" | gh auth login --with-token
-                  gh auth status
-                  gh release list
-              env:
-                  GH_PAT: ${{ secrets.GH_PAT }}
-
-            - name: Create GitHub release with APK and metadata
-              uses: softprops/action-gh-release@v1
-              with:
-                  tag_name: ${{ steps.apk_info.outputs.release_tag }}
-                  name: Release ${{ steps.apk_info.outputs.version_name }}
-                  files: |
-                      ${{ steps.signed_apk.outputs.apk_path }}
-                      index-v1.json
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-
-            - name: Verify release and assets
-              run: |
-                  TAG=${{ steps.apk_info.outputs.release_tag }}
-                  APK_NAME=$(basename "${{ steps.signed_apk.outputs.apk_path }}")
-                  RELEASE_INFO=$(gh release view "$TAG" --json assets --jq '.assets[].name')
-
-                  echo "🔍 Assets found in release $TAG:"
-                  echo "$RELEASE_INFO"
-
-                  if echo "$RELEASE_INFO" | grep -q "$APK_NAME" && echo "$RELEASE_INFO" | grep -q "index-v1.json"; then
-                      echo "✅ Release $TAG verified successfully with expected assets."
-                  else
-                      echo "❌ Release $TAG is missing expected assets."
-                      exit 1
-                  fi
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+  website:
+    if: github.event_name != 'workflow_dispatch' || (github.repository_id == '1198767196' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      RELEASE_DESTINATION: github
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - run: bundle exec ruby tests/release/run.rb
+      - name: Validate committed notes, immutable tag and GitHub page
+        if: github.event_name == 'workflow_dispatch'
+        run: ruby scripts/release.rb prepare-release
+      - uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4.0.4
+      - run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0' 'ndk;28.0.13004108'
+      - uses: gradle/actions/setup-gradle@v6.4.0
+      - run: bundle exec ruby tests/release/check_android_artifacts.rb
+      - name: Add swap for R8
+        run: |
+          sudo fallocate -l 8G /messenger-swap
+          sudo chmod 600 /messenger-swap
+          sudo mkswap /messenger-swap
+          sudo swapon /messenger-swap
+      - name: Run Messenger checks and build website APK
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testProdWebsiteDebugUnitTest :feature:media-send:testDebugUnitTest :app:lintProdWebsiteRelease :app:assembleProdWebsiteRelease --no-daemon --stacktrace --max-workers=1
+          python3 tools/check_native_alignment.py app/build/outputs/apk/prodWebsite/release/app-prod-website-release-unsigned.apk
+      - name: Verify existing website private signing key
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ruby scripts/release.rb prepare-website
+      - name: Sign website APK
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          CI_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          CI_KEYSTORE_ALIAS: ${{ secrets.KEY_ALIAS }}
+          CI_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          java -jar "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" sign \
+            --ks "$CI_KEYSTORE_PATH" --ks-key-alias "$CI_KEYSTORE_ALIAS" \
+            --ks-pass env:CI_KEYSTORE_PASSWORD --key-pass env:CI_KEY_PASSWORD \
+            --out app-prod-website-release-signed.apk \
+            app/build/outputs/apk/prodWebsite/release/app-prod-website-release-unsigned.apk
+      - name: Attach verified website APK and updater index
+        if: github.event_name == 'workflow_dispatch'
+        run: ruby scripts/release.rb publish-website
+      - name: Remove restored website keystore
+        if: always() && github.event_name == 'workflow_dispatch'
+        run: rm -f -- "$RUNNER_TEMP/messenger-upload.keystore"

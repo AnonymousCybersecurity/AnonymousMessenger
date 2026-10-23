@@ -1,5 +1,7 @@
 ﻿# Anonymous Messenger © All rights reserved.
 
+Build with `.\build apk|aab|both`; use `.\release --help` for version preparation and manual publishing. See [Android builds and releases](docs/android-builds-and-releases.md) for commands, signing, Google Play and website distribution.
+
 *Anonymous Messenger* aims to redefine the standards of secure mobile communication by integrating **state-of-the-art encryption**, **OS-level hardening**, and **decentralized privacy protocols**.  
 It is part of the broader **AnonymousCybersecurity** initiative — an open-source effort dedicated to building tools that strengthen digital sovereignty and independent cybersecurity infrastructures.
 The application maximizes privacy through a fully Google‑independent architecture built on strict FOSS principles.

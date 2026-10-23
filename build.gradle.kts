@@ -45,6 +45,8 @@ allprojects {
   }
 }
 
+apply(from = "gradle/release-tasks.gradle.kts")
+
 abstract class ConcurrencyConstraintService : BuildService<BuildServiceParameters.None>
 
 fun limiter(name: String, max: Int) =
