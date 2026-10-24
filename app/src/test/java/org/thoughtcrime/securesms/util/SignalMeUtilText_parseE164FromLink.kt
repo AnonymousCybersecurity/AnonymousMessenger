@@ -36,10 +36,11 @@ class SignalMeUtilText_parseE164FromLink(private val input: String?, private val
     @Parameterized.Parameters
     fun data(): Collection<Array<Any?>> {
       return listOf(
-        arrayOf("https://%73%69%67%6E%61%6C.%6D%65/#p/+15555555555", "+15555555555"),
-        arrayOf("https://%73%69%67%6E%61%6C.%6D%65/#p/5555555555", null),
-        arrayOf("https://%73%69%67%6E%61%6C.%6D%65", null),
-        arrayOf("https://%73%69%67%6E%61%6C.%6D%65/#p/", null),
+        arrayOf("https://signal.me/#p/+15555555555", "+15555555555"),
+        arrayOf("https://signal.me/#p/5555555555", null),
+        arrayOf("https://signal.me", null),
+        arrayOf("https://signal.me/#p/", null),
+        arrayOf("https://%73%69%67%6E%61%6C.%6D%65/#p/+15555555555", null),
         arrayOf("signal.me/#p/+15555555555", null),
         arrayOf("sgnl://signal.me/#p/+15555555555", "+15555555555"),
         arrayOf("sgnl://signal.me/#p/5555555555", null),

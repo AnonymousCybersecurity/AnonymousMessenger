@@ -31,6 +31,7 @@
   <string name="please_wait">Please wait…</string>
   <string name="save">Save</string>
   <string name="note_to_self">Note to Self</string>
+  <string name="RegistrationWelcomeFragment__security_is_not_optional">Security is not optional</string>
   <!-- Alternate label for the Signal Application in the device\'s home screen launcher, as in a weather/climate application. -->
   <string name="app_icon_label_weather">Weather</string>
   <!-- Alternate label for the Signal Application in the device\'s home screen launcher, as in a note-taking application.-->

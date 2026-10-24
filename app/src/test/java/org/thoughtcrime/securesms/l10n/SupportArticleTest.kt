@@ -30,7 +30,8 @@ class SupportArticleTest {
 
     for (i in 0 until strings.length) {
       val stringNode = strings.item(i)
-      val string = stringNode.textContent
+      // Branded resources encode the hostname; check the same URL rules for both forms.
+      val string = stringNode.textContent.replace(ENCODED_SUPPORT_HOST, "support.signal.org", ignoreCase = true)
       val stringName = stringName(stringNode)
 
       if (SUPPORT_ARTICLE.matches(string)) {
@@ -60,7 +61,8 @@ class SupportArticleTest {
 
   companion object {
     private val MAIN_STRINGS_PATH = Path("src/main/res/values/strings.xml")
-    private val SUPPORT_ARTICLE = Regex(".*://support.signal.org/.*articles/.*")
-    private val CORRECT_SUPPORT_ARTICLE = Regex("https://%73%75%70%70%6F%72%74.%73%69%67%6E%61%6C.%6F%72%67/hc/articles/\\d+(#[a-z_]+)?")
+    private const val ENCODED_SUPPORT_HOST = "%73%75%70%70%6F%72%74.%73%69%67%6E%61%6C.%6F%72%67"
+    private val SUPPORT_ARTICLE = Regex(".*://support\\.signal\\.org/.*articles/.*")
+    private val CORRECT_SUPPORT_ARTICLE = Regex("https://support\\.signal\\.org/hc/articles/\\d+(#[a-z_]+)?")
   }
 }

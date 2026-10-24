@@ -29,7 +29,7 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="40dp"
         android:gravity="center"
-        android:text="Security is not optional"
+        android:text="@string/RegistrationWelcomeFragment__security_is_not_optional"
         android:textAppearance="@style/Signal.Text.HeadlineMedium"
         app:layout_constraintBottom_toTopOf="@+id/welcome_terms_button"
         app:layout_constraintEnd_toEndOf="@+id/welcome_continue_button"
